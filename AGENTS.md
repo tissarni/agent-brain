@@ -69,7 +69,7 @@ Signal: would future-me need separate context to work on this? Yes → its own s
 Would it still exist if that system were deleted? Yes → its own main.
 Never a third level; a sub that needs subs is a main.
 Trivial fixes and refactors are neither — they get a daily log entry, nothing more.
-The active projects tree, terse, is in `AGENTS.local.md` § Active projects; `/project-init` adds to it and `/rollup` checks it.
+The active projects tree, terse, is in `AGENTS.local.md` § Active projects; `/rollup` rewrites each main's line in it from the projects' frontmatter.
 
 ## Project path resolution (every skill relies on this)
 Given a project name:

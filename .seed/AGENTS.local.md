@@ -9,7 +9,7 @@ Working languages: @LANGUAGES@.
 Principles: @PRINCIPLES@.
 
 ## Active projects
-`/project-init` writes this tree and `/rollup` checks it. Terse on purpose: names and states only.
+`/rollup` writes this tree from the projects' frontmatter, one main's line at a time. Terse on purpose: names and states only.
 
 🟢 active · 🔴 blocked · 🟡 impl-done (written, not shipped) · ⚪ done · ⏸ paused
 
