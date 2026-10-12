@@ -1,0 +1,6 @@
+# Pages kept OFF the docs site (build-docs-site.py). One glob per line, matched against the
+# brain-relative path, e.g.:
+#   02-projects/example/subprojects/example-version-flag/internal-*.html
+#   02-projects/*/specs/*.dc.html
+# The site is reachable by everyone who can reach its URL: exclude anything that
+# is not for every reader.

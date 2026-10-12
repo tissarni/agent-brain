@@ -1,0 +1,41 @@
+# Obsidian — keep shared settings, drop per-session churn
+.obsidian/workspace.json
+.obsidian/workspace-mobile.json
+.obsidian/cache
+.trash/
+
+# Local agent state, not vault content
+.claude/settings.local.json
+.superpowers/
+**/.superpowers/
+
+# Tooling junk
+.pytest_cache/
+__pycache__/
+*.pyc
+.DS_Store
+Thumbs.db
+
+# hermes-html-reader plugin sidecars (regenerated per review; not vault content)
+**/*.comments.md
+**/*.overrides.json
+**/*.done
+
+# handoff-orchestrate.sh runtime files beside a plan — machine state, recreated by
+# start/resume and by the watchdog tick. <plan>.status.md and <plan>.events.log stay.
+**/*.tick
+**/*.lock
+**/*.lock.tick
+**/*.stage
+**/*.driver.log
+**/*.baseline
+**/*.killed-*.log
+**/*.failed-*.log
+**/*.driver/
+
+# /doc-build output — the docs site (build-docs-site.py) renders every project fresh on
+# each Stop; a doc.html in the vault is only a one-off local copy.
+02-projects/**/doc.html
+
+# Claude Code worktrees
+.claude/worktrees/

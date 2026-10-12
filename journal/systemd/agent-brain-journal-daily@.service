@@ -1,0 +1,10 @@
+[Unit]
+Description=Agent brain journal (daily) for %f
+
+[Service]
+Type=oneshot
+EnvironmentFile=-%h/.config/agent-brain/journal.env
+WorkingDirectory=%f
+ExecStart=/usr/bin/env bash "%f/journal/run.sh" daily
+# Keeps the docs build that auto-commit.sh starts in the background alive after ExecStart exits.
+KillMode=process

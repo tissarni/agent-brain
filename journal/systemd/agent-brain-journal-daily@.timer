@@ -1,0 +1,9 @@
+[Unit]
+Description=Agent brain journal, weekday evenings, for %f
+
+[Timer]
+OnCalendar=Mon..Fri *-*-* 23:30:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

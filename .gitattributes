@@ -1,0 +1,11 @@
+# This vault lives on a Windows filesystem but is driven from WSL and Git Bash.
+# Force LF everywhere: a CRLF checkout makes shell scripts unrunnable under WSL
+# ("bad interpreter: /usr/bin/env sh^M") and adds noise to markdown diffs.
+* text=auto eol=lf
+
+# Belt and braces for the executables — these must never be CRLF.
+*.sh        text eol=lf
+.githooks/* text eol=lf
+
+# Obsidian canvases are JSON; treat as text so they diff, but never munge them.
+*.canvas    text eol=lf

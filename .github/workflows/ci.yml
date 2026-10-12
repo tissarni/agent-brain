@@ -1,0 +1,144 @@
+name: ci
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  linux:
+    if: startsWith(github.repository, 'tissarni/agent-brain')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install the handoff kit
+        run: |
+          set -eu
+          url=$(grep '^HANDOFF_KIT_URL=' handoff-kit.pin | cut -d= -f2-)
+          tag=$(grep '^HANDOFF_KIT_TAG=' handoff-kit.pin | cut -d= -f2-)
+          git clone -q "$url" "$RUNNER_TEMP/kit"
+          git -C "$RUNNER_TEMP/kit" checkout -q --detach "$tag"
+          mkdir -p "$HOME/.local/bin"
+          ln -sf "$RUNNER_TEMP/kit/brief-check.sh" "$HOME/.local/bin/brief-check"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - run: sh sync-skills.sh
+      - name: The manifest covers every tracked file
+        run: diff <(git ls-files | sort) <(./template-files.sh | sort)
+        shell: bash
+      - name: Tests
+        shell: bash
+        env:
+          SMOKE_KIT: ${{ runner.temp }}/kit
+        run: |
+          fail=0
+          for t in tests/*.sh; do
+            [ "$t" = tests/sandbox.sh ] && continue
+            echo "== $t"
+            bash "$t" || fail=1
+          done
+          exit $fail
+      - name: shellcheck
+        run: git ls-files '*.sh' | xargs shellcheck -S error
+  macos:
+    if: startsWith(github.repository, 'tissarni/agent-brain') && (github.event.repository.private == false || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/'))
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install bash and the GNU tools
+        run: |
+          brew install bash coreutils findutils gnu-sed grep
+          for p in coreutils findutils gnu-sed grep; do
+            echo "$(brew --prefix)/opt/$p/libexec/gnubin" >> "$GITHUB_PATH"
+          done
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: "1"
+      - name: Install the handoff kit
+        run: |
+          set -eu
+          url=$(grep '^HANDOFF_KIT_URL=' handoff-kit.pin | cut -d= -f2-)
+          tag=$(grep '^HANDOFF_KIT_TAG=' handoff-kit.pin | cut -d= -f2-)
+          git clone -q "$url" "$RUNNER_TEMP/kit"
+          git -C "$RUNNER_TEMP/kit" checkout -q --detach "$tag"
+          mkdir -p "$HOME/.local/bin"
+          ln -sf "$RUNNER_TEMP/kit/brief-check.sh" "$HOME/.local/bin/brief-check"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - run: sh sync-skills.sh
+      - name: The manifest covers every tracked file
+        run: diff <(git ls-files | sort) <(./template-files.sh | sort)
+        shell: bash
+      - name: Tests
+        shell: bash
+        env:
+          SMOKE_KIT: ${{ runner.temp }}/kit
+        run: |
+          fail=0
+          for t in tests/*.sh; do
+            case "$t" in tests/sandbox.sh|tests/journal.sh) continue ;; esac
+            echo "== $t"
+            bash "$t" || fail=1
+          done
+          exit $fail
+  setup-linux:
+    if: startsWith(github.repository, 'tissarni/agent-brain')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Stub claude
+        run: |
+          mkdir -p "$RUNNER_TEMP/stub"
+          cat > "$RUNNER_TEMP/stub/claude" <<'EOF'
+          #!/usr/bin/env bash
+          if [ "${1:-}" = auth ] && [ "${2:-}" = status ]; then echo '{"loggedIn": true}'; fi
+          exit 0
+          EOF
+          chmod +x "$RUNNER_TEMP/stub/claude"
+          echo "$RUNNER_TEMP/stub" >> "$GITHUB_PATH"
+      - name: Run setup.sh
+        run: |
+          ./setup.sh --yes --name ci --role ci --languages bash --principles KISS --code-root ~/code
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Check the installed commands
+        run: |
+          set -eu
+          for c in handoff-launch handoff-orchestrate brief-check; do command -v "$c"; done
+          brief=""
+          for f in "$GITHUB_WORKSPACE"/02-projects/example/subprojects/example-version-flag/specs/*-brief-1-*; do
+            [ -f "$f" ] && { brief=$f; break; }
+          done
+          [ -n "$brief" ] || { echo "example brief not found"; exit 1; }
+          brief-check "$brief"
+          handoff-launch loop "$brief" --gate auto --backend claude --dry-run
+  setup-macos:
+    if: startsWith(github.repository, 'tissarni/agent-brain') && (github.event.repository.private == false || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/'))
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Stub claude
+        run: |
+          mkdir -p "$RUNNER_TEMP/stub"
+          cat > "$RUNNER_TEMP/stub/claude" <<'EOF'
+          #!/usr/bin/env bash
+          if [ "${1:-}" = auth ] && [ "${2:-}" = status ]; then echo '{"loggedIn": true}'; fi
+          exit 0
+          EOF
+          chmod +x "$RUNNER_TEMP/stub/claude"
+          echo "$RUNNER_TEMP/stub" >> "$GITHUB_PATH"
+      - name: Run setup.sh
+        run: |
+          ./setup.sh --yes --name ci --role ci --languages bash --principles KISS --code-root ~/code
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Check the installed commands
+        run: |
+          set -eu
+          for c in handoff-launch handoff-orchestrate brief-check; do command -v "$c"; done
+          brief=""
+          for f in "$GITHUB_WORKSPACE"/02-projects/example/subprojects/example-version-flag/specs/*-brief-1-*; do
+            [ -f "$f" ] && { brief=$f; break; }
+          done
+          [ -n "$brief" ] || { echo "example brief not found"; exit 1; }
+          brief-check "$brief"
+          handoff-launch loop "$brief" --gate auto --backend claude --dry-run

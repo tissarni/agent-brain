@@ -1,0 +1,93 @@
+# The template-owned paths, one git glob pathspec per line, relative to the root.
+# A directory entry covers everything below it. Everything unlisted is local to the brain.
+# Template updates replace these files; put personal content in AGENTS.local.md instead.
+
+# Constitution, docs and scripts
+AGENTS.md
+CLAUDE.md
+LICENSE
+README.md
+SKILLS.md
+template.manifest
+template-files.sh
+tests/template-ownership.sh
+tests/brain-env-readers.sh
+auto-commit.sh
+build-docs-site.py
+context-guard.sh
+reconcile-repos.sh
+sync-skills.sh
+
+# Hooks, settings, git config files
+.githooks/pre-commit
+.claude/hooks/guard-git-refs.py
+.claude/settings.json
+.gitattributes
+.gitignore
+
+# Project templates
+02-projects/_templates/ADR-*-template.md
+02-projects/_templates/CONVENTION.md
+02-projects/_templates/main-context.md
+02-projects/_templates/plan.md
+02-projects/_templates/sub-context.md
+02-projects/_templates/sub-current.md
+
+# Obsidian core settings
+.obsidian/app.json
+.obsidian/appearance.json
+.obsidian/core-plugins.json
+.obsidian/graph.json
+
+# Skills (backlog-sync is local), canonical copies then the mirror
+.agents/skills/adr
+.agents/skills/day-log
+.agents/skills/debrief
+.agents/skills/decision-needed
+.agents/skills/doc-build
+.agents/skills/handoff
+.agents/skills/handoff-orchestrate
+.agents/skills/handoff-plan
+.agents/skills/handoff-revise
+.agents/skills/handoff-split
+.agents/skills/md-html
+.agents/skills/project-init
+.agents/skills/project-status
+.agents/skills/rollup
+.agents/skills/ship
+.agents/skills/supersede
+.agents/skills/team-doc
+.agents/skills/week-recap
+.claude/skills/adr
+.claude/skills/day-log
+.claude/skills/debrief
+.claude/skills/decision-needed
+.claude/skills/doc-build
+.claude/skills/handoff
+.claude/skills/handoff-orchestrate
+.claude/skills/handoff-plan
+.claude/skills/handoff-revise
+.claude/skills/handoff-split
+.claude/skills/md-html
+.claude/skills/project-init
+.claude/skills/project-status
+.claude/skills/rollup
+.claude/skills/ship
+.claude/skills/supersede
+.claude/skills/team-doc
+.claude/skills/week-recap
+
+# Seeds, copied once by setup.sh
+.seed
+
+# Kit pin and seed test
+handoff-kit.pin
+tests/seeds.sh
+setup.sh
+tests/setup-smoke.sh
+journal
+tests/journal.sh
+extract-template.sh
+tests/sandbox.sh
+tests/template-lifecycle.sh
+.github

@@ -1,0 +1,41 @@
+#!/usr/bin/env sh
+# Block commits where a generated file has drifted from its source, and warn (never block)
+# when a commit changes template-owned files in a brain that pulls from a template.
+#
+# Enable once per clone:   git config core.hooksPath .githooks
+# Bypass deliberately:     git commit --no-verify
+#
+# Checked here:
+#   .claude/skills/  must mirror  .agents/skills/   (see sync-skills.sh)
+#   template-owned files (template.manifest): warn only, when brain.env exists and a
+#   `template` remote is set. The change must land in the template too.
+#   The warning is live only in a clone with core.hooksPath set to .githooks.
+
+cd "$(git rev-parse --show-toplevel)" || exit 1
+FAIL=0
+
+if [ -f ./sync-skills.sh ]; then
+  if ! sh ./sync-skills.sh >/dev/null 2>&1; then
+    echo "─────────────────────────────────────────────────────────────"
+    echo "pre-commit: skills mirror has drifted from the canonical copy"
+    echo "─────────────────────────────────────────────────────────────"
+    sh ./sync-skills.sh 2>&1 | sed 's/^/  /'
+    echo
+    echo "  Fix:   ./sync-skills.sh --apply && git add .claude/skills"
+    echo "  Skip:  git commit --no-verify"
+    echo
+    FAIL=1
+  fi
+fi
+
+if [ -f ./brain.env ] && [ -f ./template-files.sh ] && git remote get-url template >/dev/null 2>&1; then
+  OWNED=$(sh ./template-files.sh --staged 2>/dev/null)
+  if [ -n "$OWNED" ]; then
+    echo "pre-commit: this commit changes template-owned files:"
+    printf '%s\n' "$OWNED" | sed 's/^/  /'
+    echo "  Make the same change in the template too, or expect a conflict on the next update."
+    echo
+  fi
+fi
+
+exit $FAIL

@@ -1,0 +1,14 @@
+{
+  "userIgnoreFilters": [
+    "node_modules",
+    ".git",
+    "*.js",
+    "*.ts",
+    "*.json",
+    "*.lock"
+  ],
+  "newFileLocation": "folder",
+  "newFileFolderPath": "00-inbox",
+  "attachmentFolderPath": "05-weekly/assets",
+  "alwaysUpdateLinks": true
+}
