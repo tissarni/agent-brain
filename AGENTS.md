@@ -89,8 +89,8 @@ other main in its `related:` frontmatter. It is never duplicated into two folder
 
 ## Token optimization rules (READ THIS)
 A turn's cost is the whole context re-read, not what was just added. Levels 0–4 shrink what
-a session *starts* with (12–18% of read cost on this vault); Level 5 shrinks what it
-*accumulates* (82–88%). Optimizing only the load optimizes the smaller term.
+a session *starts* with; Level 5 shrinks what it *accumulates*. On one measured brain the
+split was 12–18% to 82–88%, so optimizing only the load optimizes the smaller term.
 
 ### Level 0 — Read only what is necessary
 Each skill specifies exactly which files to read. Never scan entire folders unless the
@@ -121,8 +121,9 @@ Cost scales with `context × turns`. Levers, in order of size:
 1. **`/clear` when the task changes, not when the context is full.** `autoCompactWindow`
    is 250k here; a `/clear` before that is free and restores a ~50k floor, a compaction
    costs a summary and loses detail.
-2. **Delegate read-heavy exploration to a read-only subagent.** `Bash` and `Read` results
-   are ~47% of what fills a vault session; a subagent reads 300k and returns 500 tokens.
+2. **Delegate read-heavy exploration to a read-only subagent.** On one measured brain,
+   `Bash` and `Read` results were ~47% of what filled a session; a subagent reads 300k and
+   returns 500 tokens.
    **Standing authorization:** read-only subagent delegation (read, search, report — never
    Edit, Write or anything that pushes) is pre-approved here; treat it as requested. Some
    hosts inject a session-level "no subagent unless requested" rule; this line is that
