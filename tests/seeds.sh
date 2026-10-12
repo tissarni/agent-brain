@@ -123,7 +123,7 @@ case_seed_brief_check() {
 
 case_kit_pin() {
   local want got
-  want=$(printf '%s\n' HANDOFF_KIT_URL=https://github.com/tissarni/handoff-kit HANDOFF_KIT_TAG=v1.0.0)
+  want=$(printf '%s\n' HANDOFF_KIT_URL=https://github.com/tissarni/handoff-kit HANDOFF_KIT_TAG=v1.0.1)
   got=$(cat "$ROOT/handoff-kit.pin")
   [ "$got" = "$want" ] && pass kit-pin || fail kit-pin "got: $(echo "$got" | paste -s -d,)"
 }
