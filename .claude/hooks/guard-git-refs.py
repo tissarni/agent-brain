@@ -2,8 +2,8 @@
 """PreToolUse guard: refuse git operations that write to a protected branch.
 
 Wired to Bash tool calls. Inspects the COMMAND TEXT, not the working directory —
-a command aimed at another repository (`wsl -d Debian -- bash -lc 'cd ~/projects/X &&
-git push ...'`) runs with the brain as its cwd, so a cwd check waves it through.
+a command aimed at another repository (`bash -lc 'cd ~/projects/X && git push ...'`)
+runs with the brain as its cwd, so a cwd check waves it through.
 
 Settings come from brain.env, found in $CLAUDE_PROJECT_DIR, else two directories above
 this file. Read line by line, never sourced: PROTECTED_BRANCHES (space-separated, default
@@ -14,9 +14,9 @@ Push rules read only the push command's own segment: from `git` up to the next `
 A merge is refused when its own segment names a protected branch with no `/` before it
 (`git merge main`; `git merge origin/main` syncs a feature branch and passes), or when the
 command checks out or switches to a protected branch (`-b`/`-c` start points do not count).
-A commit is refused when the command runs `wsl` or names a path under CODE_ROOT that is
-not this brain, e.g. `~/projects/X`. The brain and any path inside it is the brain, even
-when it sits several levels below CODE_ROOT.
+A commit is refused when `commit` is git's subcommand, on one line, and the command names
+a path under CODE_ROOT that is not this brain, e.g. `~/projects/X`. The brain and any path
+inside it is the brain, even when it sits several levels below CODE_ROOT.
 
 Exit 0 = allow, silently. Exit 2 = block; stderr is returned to the model as the reason.
 
@@ -56,6 +56,12 @@ def brain_env(key):
     return ""
 
 
+# `git`, then any global options, then `commit` as the subcommand, all on one line:
+# `git log --grep commit` and `HEAD^{commit}` are not commits.
+COMMIT = (
+    r"\bgit(?:[ \t]+(?:-C|-c|--git-dir|--work-tree|--namespace|--config-env)[ \t]+\S+"
+    r"|[ \t]+-\S*)*[ \t]+commit(?![\w-])"
+)
 PROTECTED = brain_env("PROTECTED_BRANCHES").split() or ["main", "dev"]
 
 
@@ -176,8 +182,8 @@ def main():
     # Committing into a code repository under CODE_ROOT from a brain-rooted session:
     # that repo's own hooks and settings are not in play, so there is no branch guard
     # but this one.
-    if re.search(r"\bgit\b[^&|;]*\bcommit\b", cmd):
-        if re.search(r"\bwsl\b", cmd) or other_code_dir(cmd):
+    if re.search(COMMIT, cmd):
+        if other_code_dir(cmd):
             block(
                 "a git commit against a code repository under CODE_ROOT from a "
                 "brain-rooted session. Code work belongs in a session started in the "

@@ -184,6 +184,19 @@ case_guard_refusals() {
   [ -z "$bad" ] && pass guard-refusals || fail guard-refusals "$bad"
 }
 
+case_guard_commit_subcommand() {
+  local t="$TMP/g-sub"; bad=
+  new_guard_brain g-sub "CODE_ROOT=$t/code"
+  expect 0 "git -C $t/code/app log --grep commit" \
+    "git -C $t/code/app rev-parse HEAD^{commit}" \
+    $'git -C '"$t"$'/code/app status\necho commit' \
+    "wsl -d Debian -- git commit -m x"
+  expect 2 "cd $t/code/app && git commit -m x" \
+    "git -c user.name=x -C $t/code/app commit -m x" \
+    'git --no-pager -C ~/code/app commit -m x'
+  [ -z "$bad" ] && pass guard-commit-subcommand || fail guard-commit-subcommand "$bad"
+}
+
 case_guard_fail_open() {
   local rc
   echo 'not json' | CLAUDE_PROJECT_DIR="$ROOT" python3 "$ROOT/.claude/hooks/guard-git-refs.py" >/dev/null 2>&1; rc=$?
@@ -224,6 +237,7 @@ case_guard_nested_brain
 case_guard_protected_from_env
 case_guard_defaults
 case_guard_refusals
+case_guard_commit_subcommand
 case_guard_fail_open
 case_ctx_warns
 case_ctx_quiet
