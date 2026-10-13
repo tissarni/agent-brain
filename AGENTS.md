@@ -169,6 +169,9 @@ TODO scratch files. **ADRs never enter a repo. There is no `docs/adr/`.**
   in files, code, comments, commit messages or PRs.
 - Never carry vault state: no `verified YYYY-MM-DD` stamps, no status markers.
 - Per line: *equally useful to someone who has never heard of this vault?* Yes → repo. No → vault.
+- A repo guarded by the gate (`./publish-guard.sh guarded <repo>` exits 0) is public: nothing written
+  for it (code, commits, briefs, plans, PR texts) names a word from `publish-guard.patterns`. Check
+  with `publish-guard`, never a grep that names the word: that command is one more place it is written.
 
 ### The compression rule — how decisions reach the repo
 ADRs stay here. **Every ADR whose decision constrains future code gets its ruling plus one

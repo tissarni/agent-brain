@@ -208,6 +208,11 @@ points elsewhere. A missing, empty or invalid list refuses rather than passes.
 Set `PUBLISH_GUARD_WHERE_ONLY=1` in a public CI log: locations print with any matching part replaced
 by `[hidden]`, never the words.
 
+This repository audits its own GitHub texts and history with `.github/workflows/publish-guard.yml`,
+on every PR event (a title or body edit included) and every push to `main`. The list comes from the
+Actions secret `PUBLISH_GUARD_LIST`; without it the audit skips. The log shows where a hit is, never
+the word. Copy the workflow for a public repository of your own.
+
 On macOS the script needs GNU grep, GNU sed and bash 4.2 or later:
 `brew install grep gnu-sed bash`. It finds GNU grep as `ggrep`, then `grep`, and refuses without it.
 Tests: `bash tests/publish-guard.sh`.
