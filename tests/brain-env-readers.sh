@@ -197,6 +197,21 @@ case_guard_commit_subcommand() {
   [ -z "$bad" ] && pass guard-commit-subcommand || fail guard-commit-subcommand "$bad"
 }
 
+case_guard_subcommand_args() {
+  local t="$TMP/g-args"; bad=
+  new_guard_brain g-args "CODE_ROOT=$t/code"
+  expect 0 'git diff main -- .githooks/pre-push' \
+    'git rm -f .githooks/pre-push' \
+    'git merge-base main HEAD' \
+    'git log main -- docs/merge.md' \
+    'git -C ~/code/main push origin feat/x'
+  expect 2 'git -C ~/code/app push origin main' \
+    'git --no-pager push origin main' \
+    'git --no-pager push' \
+    'git -c core.x=y merge main'
+  [ -z "$bad" ] && pass guard-subcommand-args || fail guard-subcommand-args "$bad"
+}
+
 case_guard_fail_open() {
   local rc
   echo 'not json' | CLAUDE_PROJECT_DIR="$ROOT" python3 "$ROOT/.claude/hooks/guard-git-refs.py" >/dev/null 2>&1; rc=$?
@@ -238,6 +253,7 @@ case_guard_protected_from_env
 case_guard_defaults
 case_guard_refusals
 case_guard_commit_subcommand
+case_guard_subcommand_args
 case_guard_fail_open
 case_ctx_warns
 case_ctx_quiet
