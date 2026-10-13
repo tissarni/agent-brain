@@ -9,9 +9,14 @@ Settings come from brain.env, found in $CLAUDE_PROJECT_DIR, else two directories
 this file. Read line by line, never sourced: PROTECTED_BRANCHES (space-separated, default
 "main dev") and CODE_ROOT (default ~/projects).
 
-Push rules read only the push command's own segment: from `git` up to the next `&&`,
-`||`, `;`, `|` or newline. A force push, a protected target and a bare push are refused.
-A merge is refused when its own segment names a protected branch with no `/` before it
+Under hermes (`setup.sh` registers this file as a `pre_tool_call` hook of hermes's default
+profile), a payload is checked only when its `cwd` is this brain or inside it, and settings
+then come from this file's brain.
+
+Push rules read the subcommand's own arguments: from after `git … push` up to the next
+`&&`, `||`, `;`, `|` or newline. A word like `pre-push` or `merge-base` is not the
+subcommand. A force push, a protected target and a bare push are refused.
+A merge is refused when its own arguments name a protected branch with no `/` before it
 (`git merge main`; `git merge origin/main` syncs a feature branch and passes), or when the
 command checks out or switches to a protected branch (`-b`/`-c` start points do not count).
 A commit is refused when `commit` is git's subcommand, on one line, and the command names
@@ -56,12 +61,20 @@ def brain_env(key):
     return ""
 
 
+# `git` and any global options; a subcommand follows.
+GLOBAL = (
+    r"\bgit(?:[ \t]+(?:-C|-c|--git-dir|--work-tree|--namespace|--config-env)[ \t]+\S+"
+    r"|[ \t]+-\S*)*"
+)
 # `git`, then any global options, then `commit` as the subcommand, all on one line:
 # `git log --grep commit` and `HEAD^{commit}` are not commits.
-COMMIT = (
-    r"\bgit(?:[ \t]+(?:-C|-c|--git-dir|--work-tree|--namespace|--config-env)[ \t]+\S+"
-    r"|[ \t]+-\S*)*[ \t]+commit(?![\w-])"
-)
+COMMIT = GLOBAL + r"[ \t]+commit(?![\w-])"
+
+
+def subcommand(name):
+    """Pattern for git's subcommand `name` (an alternation); group 1 is its own arguments,
+    up to the segment's end. `(?![\\w-])` keeps out `merge-base`, `pre-push` and the like."""
+    return GLOBAL + r"[ \t]+(?:%s)(?![\w-])([^&|;\n]*)" % name
 PROTECTED = brain_env("PROTECTED_BRANCHES").split() or ["main", "dev"]
 
 
@@ -108,11 +121,27 @@ def other_code_dir(cmd):
     return False
 
 
+def hermes_in_brain(cwd):
+    """A hermes payload: settings from this file's brain, never from CLAUDE_PROJECT_DIR,
+    which a hermes started from a Claude session inherits. True when the hermes process
+    runs in the brain or below it."""
+    global ROOT, PROTECTED
+    ROOT = SELF_ROOT
+    PROTECTED = brain_env("PROTECTED_BRANCHES").split() or ["main", "dev"]
+    if not cwd:
+        return False
+    c, r = Path(cwd).resolve(), ROOT.resolve()
+    return c == r or r in c.parents
+
+
 def main():
     raw = sys.stdin.read()
     if not raw.strip():
         return
-    cmd = (json.loads(raw).get("tool_input") or {}).get("command") or ""
+    data = json.loads(raw)
+    if data.get("hook_event_name") == "pre_tool_call" and not hermes_in_brain(data.get("cwd")):
+        return
+    cmd = (data.get("tool_input") or {}).get("command") or ""
     if not cmd:
         return
 
@@ -137,31 +166,28 @@ def main():
     def names_bare(branch, text):
         return re.search(r"(?<![\w./-])%s(?![\w/.-])" % re.escape(branch), text) is not None
 
-    seg = r"\bgit\b[^&|;\n]*"
-
-    for m in re.finditer(seg + r"\bpush\b[^&|;\n]*", cmd):
-        s = m.group(0)
+    for m in re.finditer(subcommand("push"), cmd):
+        s = m.group(1)
         if re.search(r"--force\b|--force-with-lease\b|(?<!\w)-f(?!\w)", s):
             block("a force push. Rewriting a published branch is not an agent action.")
         for b in PROTECTED:
             if targets(b, s):
                 block("a push targeting '%s'." % b)
+        # A bare `git push` inherits its upstream, which is invisible here — and
+        # `git switch -c` off a base branch sets exactly that misleading upstream.
+        if not s.strip(" \t'\")"):
+            block(
+                "a bare 'git push' — the upstream is not visible from the command. "
+                "Push by explicit refspec: git push origin <feature-branch>."
+            )
 
-    # A bare `git push` inherits its upstream, which is invisible here — and
-    # `git switch -c` off a base branch sets exactly that misleading upstream.
-    if re.search(r"\bgit\s+push\s*(?:$|[&|;'\"])", cmd):
-        block(
-            "a bare 'git push' — the upstream is not visible from the command. "
-            "Push by explicit refspec: git push origin <feature-branch>."
-        )
-
-    merges = list(re.finditer(seg + r"\bmerge\b[^&|;\n]*", cmd))
+    merges = list(re.finditer(subcommand("merge"), cmd))
     for m in merges:
         for b in PROTECTED:
-            if names_bare(b, m.group(0)):
+            if names_bare(b, m.group(1)):
                 block("a git merge involving '%s'." % b)
 
-    for m in merges and re.finditer(seg + r"\b(?:checkout|switch)\b([^&|;\n]*)", cmd):
+    for m in merges and re.finditer(subcommand("checkout|switch"), cmd):
         toks = m.group(1).split()
         if any(t in ("-b", "-B", "-c", "-C", "--orphan") for t in toks):
             continue  # creating a branch: the start point is only read

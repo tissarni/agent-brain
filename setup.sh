@@ -4,8 +4,9 @@
 #   ./setup.sh [--yes] [--name <n>] [--role <r>] [--languages <l>] [--principles <p>]
 #              [--code-root <dir>] [--backends <claude,hermes,devin>] [--kit <dir>]
 #              [--remote <name>|none] [--linger y|n] [--telegram y|n] [--journal y|n]
-#              [--journal-daily HH:MM] [--journal-weekly HH:MM] [-h|--help]
-#   ./setup.sh --update [--yes] [--kit <dir>]     merge the template's latest, re-run the idempotent steps
+#              [--journal-daily HH:MM] [--journal-weekly HH:MM] [--hermes-hooks y|n] [-h|--help]
+#   ./setup.sh --update [--yes] [--kit <dir>] [--hermes-hooks y|n]
+#       merge the template's latest, re-run the idempotent steps
 #   ./setup.sh --remove-example [--yes]           delete the example project and its demo repository
 #
 # The brain is the directory this script sits in. Safe to run again: nothing already
@@ -20,8 +21,8 @@ set -euo pipefail
 USAGE="usage: ./setup.sh [--yes] [--name <n>] [--role <r>] [--languages <l>] [--principles <p>]
                   [--code-root <dir>] [--backends <claude,hermes,devin>] [--kit <dir>]
                   [--remote <name>|none] [--linger y|n] [--telegram y|n] [--journal y|n]
-                  [--journal-daily HH:MM] [--journal-weekly HH:MM] [-h|--help]
-       ./setup.sh --update [--yes] [--kit <dir>]
+                  [--journal-daily HH:MM] [--journal-weekly HH:MM] [--hermes-hooks y|n] [-h|--help]
+       ./setup.sh --update [--yes] [--kit <dir>] [--hermes-hooks y|n]
        ./setup.sh --remove-example [--yes]"
 
 BRAIN=$(cd "$(dirname "$0")" && pwd)
@@ -30,7 +31,7 @@ NL='
 '
 
 YES=0 NAME="" ROLE="" LANGUAGES="" PRINCIPLES="" CODE_ROOT_RAW="" BACKENDS="" KIT_ARG="" REMOTE=""
-LINGER="" TELEGRAM="" JOURNAL="" J_DAILY=23:30 J_WEEKLY=06:00
+LINGER="" TELEGRAM="" JOURNAL="" J_DAILY=23:30 J_WEEKLY=06:00 HERMES_HOOKS=""
 MODE=setup
 HAVE_NAME=0 HAVE_ROLE=0 HAVE_LANGUAGES=0 HAVE_PRINCIPLES=0 HAVE_CODE_ROOT=0 HAVE_BACKENDS=0 HAVE_REMOTE=0
 
@@ -55,6 +56,7 @@ while [ $# -gt 0 ]; do
     --journal) need_val $#; JOURNAL=$2; shift 2 ;;
     --journal-daily) need_val $#; J_DAILY=$2; shift 2 ;;
     --journal-weekly) need_val $#; J_WEEKLY=$2; shift 2 ;;
+    --hermes-hooks) need_val $#; HERMES_HOOKS=$2; shift 2 ;;
     --update) [ "$MODE" = setup ] || usage_exit; MODE=update; shift ;;
     --remove-example) [ "$MODE" = setup ] || usage_exit; MODE=remove; shift ;;
     -h|--help) printf '%s\n' "$USAGE"; exit 0 ;;
@@ -71,7 +73,7 @@ if [ "$HAVE_BACKENDS" = 1 ]; then
     case "$b" in claude|hermes|devin) ;; *) usage_exit ;; esac
   done
 fi
-for v in "$LINGER" "$TELEGRAM" "$JOURNAL"; do
+for v in "$LINGER" "$TELEGRAM" "$JOURNAL" "$HERMES_HOOKS"; do
   case "$v" in ""|y|n) ;; *) usage_exit ;; esac
 done
 for v in "$J_DAILY" "$J_WEEKLY"; do
@@ -237,7 +239,7 @@ fi
 ENV_FILE="$BRAIN/brain.env"
 env_get() { # env_get <key> <default>
   local v=""
-  [ -f "$ENV_FILE" ] && v=$(grep "^$1=" "$ENV_FILE" | tail -n 1 | cut -d= -f2- || true)
+  [ -f "$ENV_FILE" ] && v=$(grep -m 1 "^$1=" "$ENV_FILE" | cut -d= -f2- || true)
   [ -n "$v" ] || v=$2
   expand_home "$v"
 }
@@ -516,6 +518,67 @@ if [ "$PLATFORM" != macos ]; then
   fi
 fi
 
+# Hermes shell hooks, in hermes's default profile: the Bash guard before each terminal call,
+# auto-commit at the end of each turn. Both act only in a hermes process running in this brain.
+HH_LATER="./setup.sh --update --hermes-hooks y"
+hermes_hooks() { # hermes_hooks present|set: 0 when one is registered | register both, with consent
+  python3 -I - "$1" "$BRAIN" <<'PY'
+import datetime, json, os, shlex, subprocess, sys
+mode, brain = sys.argv[1:3]
+guard, auto = brain + "/.claude/hooks/guard-git-refs.py", brain + "/auto-commit.sh"
+mine = {  # event: (this brain's entry, the script hermes dates the consent by)
+    "pre_tool_call": ({"matcher": "terminal", "command": "python3 " + shlex.quote(guard), "timeout": 10}, guard),
+    "on_session_end": ({"command": "sh %s --hermes-hook" % shlex.quote(auto), "timeout": 30}, auto),
+}
+def config(*args):
+    return subprocess.run(["hermes", "-p", "default", "config", *args], capture_output=True, text=True)
+def entries(ev):  # the event's hook list: [] when unset, None when it is not a list; any other failure exits 1
+    p = config("get", "hooks." + ev, "--json", "--raw")
+    if p.returncode:
+        if "Config key not set" in p.stderr:
+            return []
+        sys.exit(1)
+    v = json.loads(p.stdout or "null")
+    return [] if v is None else v if isinstance(v, list) else None
+def ours(e, ev):
+    return isinstance(e, dict) and e.get("command") == mine[ev][0]["command"]
+if mode == "present":
+    sys.exit(0 if any(ours(e, ev) for ev in mine for e in entries(ev) or []) else 1)
+p = config("path")
+if p.returncode or not p.stdout.strip():
+    sys.exit(1)
+allow = os.path.join(os.path.dirname(p.stdout.strip()), "shell-hooks-allowlist.json")
+try:
+    with open(allow, encoding="utf-8") as fh:
+        data = json.load(fh)
+except FileNotFoundError:
+    data = {"approvals": []}
+except ValueError:
+    sys.exit(1)
+if not isinstance(data, dict) or not isinstance(data.get("approvals", []), list):
+    sys.exit(1)
+iso = lambda t: datetime.datetime.fromtimestamp(t, datetime.timezone.utc).isoformat().replace("+00:00", "Z")
+now = datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
+keys = {(ev, entry["command"]) for ev, (entry, _) in mine.items()}
+approvals = [a for a in data.get("approvals", []) if not (isinstance(a, dict) and (a.get("event"), a.get("command")) in keys)]
+for ev, (entry, script) in mine.items():
+    cur = entries(ev)
+    if cur is None or config("set", "hooks." + ev, json.dumps([e for e in cur if not ours(e, ev)] + [entry])).returncode:
+        sys.exit(1)
+    approvals.append({"event": ev, "command": entry["command"], "approved_at": now,
+                      "script_mtime_at_approval": iso(os.path.getmtime(script))})
+data["approvals"] = approvals
+tmp = "%s.tmp.%d" % (allow, os.getpid())
+with os.fdopen(os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w", encoding="utf-8") as fh:
+    json.dump(data, fh, indent=2)
+    fh.write("\n")
+os.replace(tmp, allow)
+PY
+}
+hermes_hooks_record() {
+  if hermes_hooks set; then record_ok "hermes hooks"; else record_bad "hermes hooks" "$HH_LATER"; fi
+}
+
 # Steps 8 and 9 ask about this host: --update leaves them alone, except the journal times.
 if [ "$MODE" = setup ]; then
 # ---- Step 8: backends -------------------------------------------------------------
@@ -581,6 +644,16 @@ setup_hermes() {
   [ "$KIT_OK" = 1 ] && { bash "$KIT/install.sh" $KIT_INSTALL_ARGS --hermes-profiles || true; }
   say "hermes: set its provider and log in (see '## Hermes profiles' in $KIT/README.md)"
   record_ok "backend hermes"
+  case "$HERMES_HOOKS" in
+    y) hermes_hooks_record ;;
+    n) say "hermes hooks: not registered (later: $HH_LATER)" ;;
+    *)
+      if confirm "Register the brain's Bash guard and auto-commit as hermes hooks (default profile)?"; then
+        hermes_hooks_record
+      else
+        say "hermes hooks: not registered (later: $HH_LATER)"
+      fi ;;
+  esac
 }
 setup_devin() {
   local cmd="curl -fsSL https://cli.devin.ai/install.sh | bash" login="devin auth login"
@@ -601,6 +674,10 @@ setup_devin() {
 for b in $BACKENDS; do
   case "$b" in claude) setup_claude ;; hermes) setup_hermes ;; devin) setup_devin ;; esac
 done
+case " $BACKENDS " in
+  *" hermes "*) ;;
+  *) if [ "$HERMES_HOOKS" = y ]; then say "hermes hooks: hermes backend not chosen, flag ignored"; fi ;;
+esac
 if [ "$HAVE_BACKENDS" = 1 ] || seed_copied brain.env; then
   set -- $BACKENDS
   env_set DEFAULT_BACKEND "$1"
@@ -711,6 +788,21 @@ PY
       bash "$BRAIN/journal/install.sh" "$BRAIN" --daily "${JD:-$J_DAILY}" --weekly "${JW:-$J_WEEKLY}" \
         || record_bad "journal timers" "bash journal/install.sh $BRAIN, then ./setup.sh --update"
     fi
+  fi
+
+  step "Hermes hooks"
+  if ! command -v hermes >/dev/null 2>&1; then
+    if [ "$HERMES_HOOKS" = y ]; then
+      record_bad "hermes hooks" "install hermes, then $HH_LATER"
+    else
+      say "hermes hooks: hermes is not installed, nothing to refresh"
+    fi
+  elif [ "$HERMES_HOOKS" = n ]; then
+    say "hermes hooks: left alone (--hermes-hooks n)"
+  elif [ "$HERMES_HOOKS" = y ] || hermes_hooks present; then
+    hermes_hooks_record
+  else
+    say "hermes hooks: not registered; to register them: $HH_LATER"
   fi
 fi
 

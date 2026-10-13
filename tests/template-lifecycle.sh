@@ -5,7 +5,7 @@
 # then "<n> passed, <m> failed".
 
 CASES=(extract-copies extract-refuses update-merges update-lists-local update-conflict
-  update-refuses-dirty remove-example remove-example-again update-after-remove)
+  update-refuses-dirty remove-example remove-example-again update-after-remove update-hermes-hooks)
 
 . "$(dirname "$0")/sandbox.sh"
 
@@ -130,6 +130,32 @@ case_update_after_remove() {
   fi
 }
 
+case_update_hermes_hooks() {
+  local rc bad=
+  fake_hermes
+  update; rc=$?
+  [ "$rc" -eq 0 ] || { fail update-hermes-hooks "exit $rc: $(tail_log "$TMP/update.log")"; return; }
+  /usr/bin/grep -q -F -e '--hermes-hooks y' "$TMP/update.log" || bad="$bad [log does not name --hermes-hooks y]"
+  if [ -f "$TMP/log/hermes.log" ] && /usr/bin/grep -q -F ' config set ' "$TMP/log/hermes.log"; then
+    bad="$bad [registered without a flag]"
+  fi
+  printf '%s\n' "{\"hooks\": {\"pre_tool_call\": [{\"matcher\": \"terminal\", \"command\": \"python3 $BRAIN/.claude/hooks/guard-git-refs.py\"}]}}" >"$HOME_DIR/.hermes/config.json"
+  update; rc=$?
+  [ "$rc" -eq 0 ] || { fail update-hermes-hooks "second update exit $rc: $(tail_log "$TMP/update.log")"; return; }
+  python3 -I - "$HOME_DIR/.hermes" "$BRAIN" <<'EOF' || bad="$bad [config or allowlist]"
+import json, shlex, sys
+home, brain = sys.argv[1:3]
+cfg = json.load(open(home + "/config.json"))["hooks"]
+guard = "python3 " + shlex.quote(brain + "/.claude/hooks/guard-git-refs.py")
+auto = "sh %s --hermes-hook" % shlex.quote(brain + "/auto-commit.sh")
+assert [e["command"] for e in cfg["pre_tool_call"]] == [guard], cfg
+assert [e["command"] for e in cfg["on_session_end"]] == [auto], cfg
+ap = json.load(open(home + "/shell-hooks-allowlist.json"))["approvals"]
+assert sorted((a["event"], a["command"]) for a in ap) == sorted([("pre_tool_call", guard), ("on_session_end", auto)]), ap
+EOF
+  [ -z "$bad" ] && pass update-hermes-hooks || fail update-hermes-hooks "$bad"
+}
+
 case_extract_copies
 case_extract_refuses
 case_update_merges
@@ -139,6 +165,7 @@ case_update_refuses_dirty
 case_remove_example
 case_remove_example_again
 case_update_after_remove
+case_update_hermes_hooks
 
 echo "$passed passed, $failed failed"
 [ "$failed" -eq 0 ]

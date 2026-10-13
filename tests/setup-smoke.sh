@@ -5,7 +5,8 @@
 # Output: one "PASS <case>" or "FAIL <case> — <why>" per case, then "<n> passed, <m> failed".
 
 CASES=(setup-runs commands-resolve seeds-filled demo-repo git-config remote-template
-  example-brief-check loop-dry-run idempotent nothing-installed bad-flag extras bad-time)
+  example-brief-check loop-dry-run idempotent nothing-installed bad-flag extras bad-time
+  ignores-temp-files env-first-wins hermes-hooks)
 
 . "$(dirname "$0")/sandbox.sh"
 
@@ -126,6 +127,53 @@ case_bad_time() {
   [ $? -eq 2 ] && pass bad-time || fail bad-time "exit was not 2"
 }
 
+case_ignores_temp_files() {
+  local d=$BRAIN/02-projects/example listed
+  : >"$d/x.md.tmp.123"
+  : >"$BRAIN/brain.env.tmp.45"
+  : >"$d/y.html.tmp"
+  listed=$(git -C "$BRAIN" status --porcelain --untracked-files=all | /usr/bin/grep -F -e '.tmp' | paste -s -d'|')
+  rm -f "$d/x.md.tmp.123" "$BRAIN/brain.env.tmp.45" "$d/y.html.tmp"
+  [ -z "$listed" ] && pass ignores-temp-files || fail ignores-temp-files "git lists: $listed"
+}
+
+case_hermes_hooks() {
+  local rc1 rc2 bad=
+  fake_hermes
+  printf '%s\n' '{"hooks": {"pre_tool_call": [{"matcher": "terminal", "command": "mine"}]}}' >"$HOME_DIR/.hermes/config.json"
+  sandbox "$BRAIN/setup.sh" "${SETUP_ARGS[@]}" --backends claude,hermes --kit "$KIT" >"$TMP/setup5.log" 2>&1
+  rc1=$?
+  sandbox "$BRAIN/setup.sh" "${SETUP_ARGS[@]}" --backends claude,hermes --kit "$KIT" >"$TMP/setup6.log" 2>&1
+  rc2=$?
+  [ "$rc1" -eq 0 ] && [ "$rc2" -eq 0 ] || { fail hermes-hooks "exit $rc1, $rc2: $(tail_log "$TMP/setup6.log")"; return; }
+  /usr/bin/grep -q -F 'ready: hermes hooks' "$TMP/setup6.log" || bad="$bad [no 'ready: hermes hooks']"
+  python3 -I - "$HOME_DIR/.hermes" "$BRAIN" <<'EOF' || bad="$bad [config or allowlist: $?]"
+import json, shlex, sys
+home, brain = sys.argv[1:3]
+cfg = json.load(open(home + "/config.json"))["hooks"]
+guard = "python3 " + shlex.quote(brain + "/.claude/hooks/guard-git-refs.py")
+auto = "sh %s --hermes-hook" % shlex.quote(brain + "/auto-commit.sh")
+pre = cfg["pre_tool_call"]
+assert [e["command"] for e in pre] == ["mine", guard], pre
+assert all(e["matcher"] == "terminal" for e in pre), pre
+assert [e["command"] for e in cfg["on_session_end"]] == [auto], cfg["on_session_end"]
+ap = json.load(open(home + "/shell-hooks-allowlist.json"))["approvals"]
+assert sorted((a["event"], a["command"]) for a in ap) == sorted([("pre_tool_call", guard), ("on_session_end", auto)]), ap
+EOF
+  [ -z "$bad" ] && pass hermes-hooks || fail hermes-hooks "$bad"
+}
+
+
+case_env_first_wins() {
+  local rc
+  echo 'DEFAULT_BACKEND=devin' >>"$BRAIN/brain.env"
+  sandbox "$BRAIN/setup.sh" "${SETUP_ARGS[@]}" --kit "$KIT" >"$TMP/setup4.log" 2>&1
+  rc=$?
+  /usr/bin/grep -v -x 'DEFAULT_BACKEND=devin' "$BRAIN/brain.env" >"$TMP/env" && cat "$TMP/env" >"$BRAIN/brain.env"
+  [ "$rc" -eq 0 ] || { fail env-first-wins "exit $rc: $(tail_log "$TMP/setup4.log")"; return; }
+  /usr/bin/grep -q -e '--gate auto --backend claude$' "$TMP/setup4.log" && pass env-first-wins || fail env-first-wins "backend is not claude: $(tail_log "$TMP/setup4.log")"
+}
+
 case_setup_runs
 case_commands_resolve
 case_seeds_filled
@@ -139,6 +187,9 @@ case_nothing_installed
 case_bad_flag
 case_extras
 case_bad_time
+case_env_first_wins
+case_ignores_temp_files
+case_hermes_hooks
 
 echo "$passed passed, $failed failed"
 [ "$failed" -eq 0 ]

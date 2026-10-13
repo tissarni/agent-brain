@@ -16,7 +16,7 @@ __pycache__/
 .DS_Store
 Thumbs.db
 
-# hermes-html-reader plugin sidecars (regenerated per review; not vault content)
+# Review sidecars written beside a rendered page (regenerated per review; not vault content)
 **/*.comments.md
 **/*.overrides.json
 **/*.done
@@ -32,6 +32,10 @@ Thumbs.db
 **/*.killed-*.log
 **/*.failed-*.log
 **/*.driver/
+
+# Temp files the kit and setup.sh write beside a file, then rename over it; a crash can leave one.
+**/*.tmp
+**/*.tmp.*
 
 # /doc-build output — the docs site (build-docs-site.py) renders every project fresh on
 # each Stop; a doc.html in the vault is only a one-off local copy.
