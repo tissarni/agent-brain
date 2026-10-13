@@ -12,8 +12,10 @@ template.manifest
 template-files.sh
 tests/template-ownership.sh
 tests/brain-env-readers.sh
+tests/publish-guard.sh
 auto-commit.sh
 build-docs-site.py
+publish-guard.sh
 context-guard.sh
 reconcile-repos.sh
 sync-skills.sh
