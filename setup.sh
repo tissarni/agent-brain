@@ -362,9 +362,27 @@ with open(path, "w", encoding="utf-8", newline="") as fh:
 PY
 }
 
+fill_demo_repo() { # update mode asked nothing: only @DEMO_REPO@ is known
+  python3 -I - "$1" "$DEMO" <<'PY'
+import sys
+path, demo = sys.argv[1:3]
+with open(path, encoding="utf-8", newline="") as fh:
+    text = fh.read()
+with open(path, "w", encoding="utf-8", newline="") as fh:
+    fh.write(text.replace("@DEMO_REPO@", demo))
+PY
+}
+
 COPIED=""
 EXAMPLE_REMOVED=0
 [ "$(env_get EXAMPLE "")" = removed ] && EXAMPLE_REMOVED=1
+if [ "$MODE" = update ] && [ "$EXAMPLE_REMOVED" = 0 ] && [ ! -e "$BRAIN/02-projects/example" ]; then
+  # Deleted by hand: re-seeding it would leave @DEMO_REPO@ unfilled and fail the final check.
+  [ -f "$ENV_FILE" ] || : >"$ENV_FILE"
+  env_set EXAMPLE removed
+  EXAMPLE_REMOVED=1
+  say "example not found: recorded as removed (EXAMPLE=removed in brain.env)"
+fi
 SEED_SKIP=(! -path './demo-repo/*')
 [ "$EXAMPLE_REMOVED" = 0 ] || SEED_SKIP+=(! -path './02-projects/example/*')
 SEEDS=$(cd "$BRAIN/.seed" && find . -type f "${SEED_SKIP[@]}" | sed 's|^\./||' | sort)
@@ -376,6 +394,7 @@ while IFS= read -r rel; do
   cp "$BRAIN/.seed/$rel" "$dest"
   COPIED="$COPIED$rel$NL"
   if [ "$MODE" = update ]; then
+    if grep -q -F '@DEMO_REPO@' "$dest"; then fill_demo_repo "$dest"; fi
     if grep -q -E '@[A-Z_]+@' "$dest"; then say "created $rel (placeholders unfilled: edit it by hand)"; else say "created $rel"; fi
   else
     if grep -q -F '@' "$dest"; then fill_placeholders "$dest"; fi

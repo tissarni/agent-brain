@@ -5,7 +5,8 @@
 # then "<n> passed, <m> failed".
 
 CASES=(extract-copies extract-refuses update-merges update-lists-local update-conflict
-  update-refuses-dirty remove-example remove-example-again update-after-remove update-hermes-hooks)
+  update-refuses-dirty update-fills-example-seed remove-example remove-example-again update-after-remove
+  update-after-hand-delete update-hermes-hooks)
 
 . "$(dirname "$0")/sandbox.sh"
 
@@ -97,6 +98,22 @@ case_update_refuses_dirty() {
   [ "$rc" -eq 1 ] && pass update-refuses-dirty || fail update-refuses-dirty "exit $rc, not 1"
 }
 
+case_update_fills_example_seed() {
+  local rc f
+  f=$(ls "$BRAIN"/02-projects/example/subprojects/example-version-flag/specs/*-brief-1-* 2>/dev/null | head -n 1)
+  [ -n "$f" ] || { fail update-fills-example-seed "no example brief to remove"; return; }
+  rm -f "$f"
+  brain_commit "brain: example brief removed" || { fail update-fills-example-seed "cannot commit"; return; }
+  update; rc=$?
+  [ "$rc" -eq 0 ] || { fail update-fills-example-seed "exit $rc: $(tail_log "$TMP/update.log")"; return; }
+  [ -f "$f" ] || { fail update-fills-example-seed "the brief did not come back"; return; }
+  ! /usr/bin/grep -q -F '@DEMO_REPO@' "$f" || { fail update-fills-example-seed "@DEMO_REPO@ is still in the brief"; return; }
+  /usr/bin/grep -q -F "$DEMO" "$f" || { fail update-fills-example-seed "the demo path is not in the brief"; return; }
+  # update leaves the re-seeded file untracked; remove-example needs a clean tree.
+  brain_commit "brain: example brief restored" || { fail update-fills-example-seed "cannot commit the restored brief"; return; }
+  pass update-fills-example-seed
+}
+
 case_remove_example() {
   local rc before after
   before=$(/usr/bin/grep -v -x -F -e "$EX_LINE_1" -e "$EX_LINE_2" "$BRAIN/AGENTS.local.md")
@@ -128,6 +145,22 @@ case_update_after_remove() {
   else
     fail update-after-remove "the example or the demo came back"
   fi
+}
+
+case_update_after_hand_delete() {
+  local rc
+  # The brain has no example; forget that it was removed, as a hand-delete would have.
+  /usr/bin/grep -v -x 'EXAMPLE=removed' "$BRAIN/brain.env" >"$TMP/brain.env.new"
+  cat "$TMP/brain.env.new" >"$BRAIN/brain.env"
+  ! /usr/bin/grep -q '^EXAMPLE=' "$BRAIN/brain.env" || { fail update-after-hand-delete "EXAMPLE= is still in brain.env"; return; }
+  brain_commit "brain: example forgotten" || { fail update-after-hand-delete "cannot commit"; return; }
+  update; rc=$?
+  [ "$rc" -eq 0 ] || { fail update-after-hand-delete "exit $rc: $(tail_log "$TMP/update.log")"; return; }
+  [ ! -e "$BRAIN/02-projects/example" ] || { fail update-after-hand-delete "the example came back"; return; }
+  [ ! -e "$DEMO" ] || { fail update-after-hand-delete "the demo repository was created"; return; }
+  /usr/bin/grep -q -x 'EXAMPLE=removed' "$BRAIN/brain.env" || { fail update-after-hand-delete "brain.env has no EXAMPLE=removed line"; return; }
+  brain_commit "brain: example recorded as removed" >/dev/null 2>&1
+  pass update-after-hand-delete
 }
 
 case_update_hermes_hooks() {
@@ -162,9 +195,11 @@ case_update_merges
 case_update_lists_local
 case_update_conflict
 case_update_refuses_dirty
+case_update_fills_example_seed
 case_remove_example
 case_remove_example_again
 case_update_after_remove
+case_update_after_hand_delete
 case_update_hermes_hooks
 
 echo "$passed passed, $failed failed"
