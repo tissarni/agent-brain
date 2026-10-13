@@ -440,7 +440,7 @@ case_install_refuses_an_empty_list
 case_install_links_on_path() {
   local n=links
   mkclone $n
-  install_in $n PATH="/usr/bin:/bin"
+  install_in $n
   "$GREP" -q 'not on PATH' "$T/out" || { fail install-links-on-path "no note when ~/.local/bin is off PATH"; return; }
   [ "$(readlink -f "$T/h-$n/.local/bin/publish-guard")" = "$REAL" ] || { fail install-links-on-path "no link"; return; }
   mkclone ${n}2
