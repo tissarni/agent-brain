@@ -210,6 +210,19 @@ against its repo.
   an earlier brief of the same plan creates what it names.
 - **Exit 2 is a usage error**, not a verdict: fix the command.
 
+When the brief's repo may be public, run `./publish-guard.sh guarded <the brief's repo>`
+from the brain root. A private name in a public repo's text is public for good.
+
+- **Exit 0** (the repo is guarded, so public): run `./publish-guard.sh files <brief>`.
+  Treat each hit as a `FAIL`: reword until the word is gone, and never quote it. If
+  `files` exits 2, the check did not run: fix the setup it names, and never treat it as
+  a pass.
+- **Exit 1**: nothing more to do.
+- **Exit 2**: the repo is not on this host. Say so, as for an unverified §2.
+
+Check with the gate, never with a grep that names the word: that command is one more
+place the word is written down.
+
 Earlier briefs in the same series are banned too. The runner is a new session; that
 file does not exist for it. Inline what still matters and let the rest go.
 

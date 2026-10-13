@@ -171,6 +171,52 @@ python3 -m http.server --directory ~/.local/share/my-brain-docs/site 8000
 Never use `sync-skills.sh --force`: it mirrors anyway, discarding edits made in the
 mirror.
 
+## Publish guard
+
+A brain writes briefs, commits and PR texts for your code repositories. When one of them is public,
+any private name in that text (a client, a colleague, a host, an employer) is public for good: a
+pushed commit stays fetchable by its hash, a PR text keeps its old revisions, and a word in a PR
+title ends up in the squash commit. `publish-guard.sh` refuses such text before it leaves. It is
+opt-in, one command per public clone:
+
+```bash
+./publish-guard.sh install <clone>
+```
+
+That writes the clone's `pre-push` hook (shared by its worktrees) and links `publish-guard` into
+`~/.local/bin`. The hook checks what a push adds: commit messages, author and committer, paths,
+file contents (binary too), branch and tag names. `install` refuses, writing nothing, when the
+list has no pattern, when `core.hooksPath` is set (git would then ignore the hook), when the clone
+already has another `pre-push` hook (it never overwrites or chains one), or when `publish-guard` in
+`~/.local/bin` is something else. `./publish-guard.sh guarded <repo>` exits 0 when a repo's hook
+runs the gate, 1 when not, 2 when it is not a repository.
+
+**The list.** `publish-guard.patterns` in the brain root holds one extended regex per line, matched
+case-insensitively; blank lines and `#` lines are ignored. `install` creates it with a header and no
+pattern, and refuses until you add one. The brain owns it and commits it like a note; the template
+never holds a real list, and it never goes into a public repository. `PUBLISH_GUARD_PATTERNS`
+points elsewhere. A missing, empty or invalid list refuses rather than passes.
+
+**Four audits**, each printing `where: matched words` and exiting 1 on a hit:
+
+- `history <repo> [<rev>...]`: every commit reachable from the revs, default every ref.
+- `tree <dir>`: every file under a directory, contents and names.
+- `files <file>...`: plain files, such as a brief or a PR body before it is sent.
+- `github <owner/repo>`: issue, PR, review and release texts, branch and tag names, description
+  (needs `gh`).
+
+Set `PUBLISH_GUARD_WHERE_ONLY=1` in a public CI log: locations print with any matching part replaced
+by `[hidden]`, never the words.
+
+This repository audits its own GitHub texts and history with `.github/workflows/publish-guard.yml`,
+on every PR event (a title or body edit included) and every push to `main`. The list comes from the
+Actions secret `PUBLISH_GUARD_LIST`; without it the audit skips. The log shows where a hit is, never
+the word. Copy the workflow for a public repository of your own.
+
+On macOS the script needs GNU grep, GNU sed and bash 4.2 or later:
+`brew install grep gnu-sed bash`. It finds GNU grep as `ggrep`, then `grep`, and refuses without it.
+Tests: `bash tests/publish-guard.sh`.
+
 ## Privacy
 
 A brain holds its owner's notes, so keep its repository private. Template-owned files hold no
