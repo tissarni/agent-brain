@@ -190,6 +190,14 @@ brief-check <each brief>
 
 Every `FAIL` line is a defect. Do not report the phase as written while one remains.
 
+When a brief's repo may be public, run `./publish-guard.sh guarded <the repo>` from the
+brain root. On exit 0 (guarded, so public), check the plan and every brief of the phase
+in one call: `./publish-guard.sh files <plan> <each brief>`. Treat each hit as a `FAIL`:
+reword until the word is gone, and never quote it. The plan is in the call because its
+file name becomes a PR's slug, and the gate checks names too. If `files` exits 2, the
+check did not run: fix the setup it names, and never treat it as a pass. Exit 1 from
+`guarded`: nothing more to do. Exit 2: the repo is not on this host, say so.
+
 A later brief's `WARN` lines about files and branches an earlier brief of the phase
 creates are expected: check each against that brief's §4 instead.
 
