@@ -137,7 +137,7 @@ if [ "$JOB" = weekly ]; then
   fi
 fi
 
-# Only Claude Code has the Stop hook that commits; hermes and devin need this call.
+# Claude Code (Stop hook) and hermes (on_session_end hook) commit by themselves; devin needs this call.
 if [ -f "$BRAIN/auto-commit.sh" ]; then
   sh "$BRAIN/auto-commit.sh" </dev/null >>"$LOG" 2>&1
 fi

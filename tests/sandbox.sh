@@ -75,6 +75,53 @@ for n in sudo apt-get dnf brew gh glab; do
 done
 chmod +x "$TMP/fakes"/*
 
+# fake_hermes: a hermes that answers only `config path|get|set` against $HOME/.hermes/config.json
+# (flags ignored, a leading `-p <profile>` dropped), and logs every call. It is written after the
+# chmod above, so it gets its own. Creates $HOME/.hermes.
+fake_hermes() {
+  mkdir -p "$HOME_DIR/.hermes"
+  cat >"$TMP/fakes/hermes" <<EOF
+#!/usr/bin/env bash
+echo "hermes \$*" >>"$TMP/log/hermes.log"
+exec python3 -I -c '
+import json, os, sys
+a = sys.argv[1:]
+if a[:1] == ["-p"]:
+    a = a[2:]
+home = os.environ["HOME"]
+cfg = home + "/.hermes/config.json"
+def load():
+    try:
+        with open(cfg) as fh:
+            return json.load(fh)
+    except OSError:
+        return {}
+if a[:1] != ["config"] or len(a) < 2:
+    sys.exit(0)
+if a[1] == "path":
+    print(home + "/.hermes/config.yaml")
+elif a[1] == "get":
+    v = load()
+    for k in a[2].split("."):
+        if not isinstance(v, dict) or k not in v:
+            sys.stderr.write("Config key not set: " + a[2] + "\n")
+            sys.exit(1)
+        v = v[k]
+    print(json.dumps(v))
+elif a[1] == "set":
+    d = load()
+    t = d
+    ks = a[2].split(".")
+    for k in ks[:-1]:
+        t = t.setdefault(k, {})
+    t[ks[-1]] = json.loads(a[3])
+    with open(cfg, "w") as fh:
+        json.dump(d, fh)
+' "\$@"
+EOF
+  chmod +x "$TMP/fakes/hermes"
+}
+
 # The template, as a bare repo, and the brain cloned from it.
 mkdir "$TMP/src"
 (cd "$ROOT" && ./template-files.sh) | while IFS= read -r f; do

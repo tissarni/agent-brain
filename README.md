@@ -93,7 +93,8 @@ GitHub repository for the brain.
 
 Three extras are asked, or set by flag: `--linger y|n` keeps your user services running with no
 login session, `--telegram y|n` sets up Telegram notifications, and `--journal y|n` installs the
-journal timers (`--journal-daily HH:MM`, `--journal-weekly HH:MM`).
+journal timers (`--journal-daily HH:MM`, `--journal-weekly HH:MM`). `--hermes-hooks y|n` answers whether to
+register the brain's hooks with hermes (see Backends).
 
 **Update.** `./setup.sh --update` merges the template's latest into the brain, never rebases,
 and re-runs the idempotent steps. The clone's `origin` becomes the `template` remote, with its
@@ -128,10 +129,19 @@ to you.
 `claude` is the default. `--backends claude,hermes,devin` picks others, and `DEFAULT_BACKEND`
 in `brain.env` is the backend each skill offers by default.
 
-The hooks in `.claude/settings.json` (the Bash guard, the context guard, the auto-commit on
-Stop) run only under Claude Code. Under hermes or devin, run `sh ./auto-commit.sh` by hand
-after a session (the file is not executable, and every caller runs it through `sh`). The
-journal runner commits after its own runs.
+Setup registers the Bash guard and the auto-commit as hermes hooks in the default profile
+(`~/.hermes/config.yaml`) and records the consent in `~/.hermes/shell-hooks-allowlist.json`.
+The hooks live in the default profile only (other profiles, `-p <name>`, are not guarded), and
+both act only in a hermes session started in the brain or below it, or with `--in`:
+`terminal.cwd` and gateway sessions are not covered. Running `hermes hooks doctor` or
+`hermes hooks test` from the brain fires the allowlisted hooks there, so it commits whatever is
+dirty. `--hermes-hooks y|n` answers the question. An existing brain first runs
+`./setup.sh --update` (its old `setup.sh` rejects the new flag), then
+`./setup.sh --update --hermes-hooks y` to register them later. `hermes hooks revoke '<command>'`
+withdraws one. `--update` refreshes the recorded script times, which re-approves a guard or
+auto-commit that a template update changed. The context guard runs only under Claude Code.
+Under devin, run `sh ./auto-commit.sh` by hand after a session (the file is not executable, and
+every caller runs it through `sh`). The journal runner commits after its own runs.
 
 ## The docs site
 
