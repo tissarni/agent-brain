@@ -9,6 +9,10 @@ Settings come from brain.env, found in $CLAUDE_PROJECT_DIR, else two directories
 this file. Read line by line, never sourced: PROTECTED_BRANCHES (space-separated, default
 "main dev") and CODE_ROOT (default ~/projects).
 
+Under hermes (`setup.sh` registers this file as a `pre_tool_call` hook of hermes's default
+profile), a payload is checked only when its `cwd` is this brain or inside it, and settings
+then come from this file's brain.
+
 Push rules read the subcommand's own arguments: from after `git … push` up to the next
 `&&`, `||`, `;`, `|` or newline. A word like `pre-push` or `merge-base` is not the
 subcommand. A force push, a protected target and a bare push are refused.
@@ -117,11 +121,27 @@ def other_code_dir(cmd):
     return False
 
 
+def hermes_in_brain(cwd):
+    """A hermes payload: settings from this file's brain, never from CLAUDE_PROJECT_DIR,
+    which a hermes started from a Claude session inherits. True when the hermes process
+    runs in the brain or below it."""
+    global ROOT, PROTECTED
+    ROOT = SELF_ROOT
+    PROTECTED = brain_env("PROTECTED_BRANCHES").split() or ["main", "dev"]
+    if not cwd:
+        return False
+    c, r = Path(cwd).resolve(), ROOT.resolve()
+    return c == r or r in c.parents
+
+
 def main():
     raw = sys.stdin.read()
     if not raw.strip():
         return
-    cmd = (json.loads(raw).get("tool_input") or {}).get("command") or ""
+    data = json.loads(raw)
+    if data.get("hook_event_name") == "pre_tool_call" and not hermes_in_brain(data.get("cwd")):
+        return
+    cmd = (data.get("tool_input") or {}).get("command") or ""
     if not cmd:
         return
 

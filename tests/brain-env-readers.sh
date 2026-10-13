@@ -218,6 +218,36 @@ case_guard_fail_open() {
   [ "$rc" = 0 ] && pass guard-fail-open || fail guard-fail-open "exit $rc"
 }
 
+# payload_exit <guard> <event> <cwd> <command> <CLAUDE_PROJECT_DIR>: sends the guard a hook
+# payload and prints its exit code.
+payload_exit() {
+  local g="$1" ev="$2" cwd="$3" cmd="$4" proj="$5" rc
+  python3 -I -c 'import json,sys; print(json.dumps({"hook_event_name": sys.argv[1], "tool_name": "terminal", "cwd": sys.argv[2], "tool_input": {"command": sys.argv[3]}}))' "$ev" "$cwd" "$cmd" \
+    | CLAUDE_PROJECT_DIR="$proj" python3 "$g" >/dev/null 2>&1; rc=$?
+  echo "$rc"
+}
+
+case_guard_hermes_scope() {
+  local t="$TMP/g-hermes" g got; bad=
+  new_guard_brain g-hermes "PROTECTED_BRANCHES=trunk"
+  mkdir -p "$G_BRAIN/.claude/hooks" "$G_BRAIN/notes" "$t/code/brain-x" "$t/other"
+  cp "$ROOT/.claude/hooks/guard-git-refs.py" "$G_BRAIN/.claude/hooks/"
+  echo 'PROTECTED_BRANCHES=main' > "$t/other/brain.env"
+  g="$G_BRAIN/.claude/hooks/guard-git-refs.py"
+  chk() { # chk <want> <event> <cwd> <command> <project dir>
+    got=$(payload_exit "$g" "$2" "$3" "$4" "$5")
+    [ "$got" = "$1" ] || bad="$bad [$2 $3 '$4': $got, want $1]"
+  }
+  chk 2 pre_tool_call "$G_BRAIN" 'git push origin trunk' "$t/other"
+  chk 2 pre_tool_call "$G_BRAIN/notes" 'git push origin trunk' "$t/other"
+  chk 0 pre_tool_call "$G_BRAIN" 'git push origin main' "$t/other"
+  chk 0 pre_tool_call "$t/code/app" 'git push origin trunk' "$t/other"
+  chk 0 pre_tool_call "" 'git push origin trunk' "$t/other"
+  chk 0 pre_tool_call "$t/code/brain-x" 'git push origin trunk' "$t/other"
+  chk 2 PreToolUse "$t/code/app" 'git push origin trunk' "$G_BRAIN"
+  [ -z "$bad" ] && pass guard-hermes-scope || fail guard-hermes-scope "$bad"
+}
+
 # ctx_run <case> <tokens> <stdin>: runs a copy of context-guard.sh beside a brain.env with
 # a threshold of 1000; sets $out and $rc.
 ctx_run() {
@@ -254,6 +284,7 @@ case_guard_defaults
 case_guard_refusals
 case_guard_commit_subcommand
 case_guard_subcommand_args
+case_guard_hermes_scope
 case_guard_fail_open
 case_ctx_warns
 case_ctx_quiet
