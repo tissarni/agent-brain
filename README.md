@@ -129,8 +129,11 @@ to you.
 `claude` is the default. `--backends claude,hermes,devin` picks others, and `DEFAULT_BACKEND`
 in `brain.env` is the backend each skill offers by default.
 
-Setup registers the Bash guard and the auto-commit as hermes hooks in the default profile
-(`~/.hermes/config.yaml`) and records the consent in `~/.hermes/shell-hooks-allowlist.json`.
+Setup asks whether to register the Bash guard and the auto-commit as hermes hooks, but only
+when hermes is a chosen backend, is installed, and `~/.hermes` exists. The answer defaults to
+No, so pressing Enter leaves hermes unguarded; `--yes` or `--hermes-hooks y` registers without
+asking. Registering writes the default profile (`~/.hermes/config.yaml`) and records the
+consent in `~/.hermes/shell-hooks-allowlist.json`.
 The hooks live in the default profile only (other profiles, `-p <name>`, are not guarded), and
 both act only in a hermes session started in the brain or below it, or with `--in`:
 `terminal.cwd` and gateway sessions are not covered. Running `hermes hooks doctor` or
