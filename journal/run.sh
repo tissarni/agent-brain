@@ -53,7 +53,7 @@ d = n.date() if n.hour >= 12 else n.date() - datetime.timedelta(days=1)
 print(d.isoformat())' "$NOW") || { log "bad JOURNAL_NOW: $NOW"; exit 1; }
 
 # One key of brain.env, never sourced.
-BACKEND=$(grep '^DEFAULT_BACKEND=' "$BRAIN/brain.env" 2>/dev/null | tail -n 1 | cut -d= -f2-)
+BACKEND=$(grep -m 1 '^DEFAULT_BACKEND=' "$BRAIN/brain.env" 2>/dev/null | cut -d= -f2-)
 BACKEND=${BACKEND:-claude}
 BIN=$(command -v "$BACKEND" 2>/dev/null || true)
 [ -n "$BIN" ] || { [ -x "$HOME/.local/bin/$BACKEND" ] && BIN="$HOME/.local/bin/$BACKEND"; }

@@ -32,7 +32,7 @@ first, any tool that reads `AGENTS.md` in principle).
 | `.claude/settings.json` | The hooks |
 | `AGENTS.md`, `CLAUDE.md` | The rules; `CLAUDE.md` only points to `AGENTS.md` |
 | `AGENTS.local.md` | This brain's own rules, projects and owner; the template never ships it |
-| `brain.env` | This brain's settings, one `KEY=value` per line; never sourced, no secrets |
+| `brain.env` | This brain's settings, one `KEY=value` per line, the first one of a key wins; never sourced, no secrets |
 | `template.manifest`, `template-files.sh` | The paths the template owns; the script lists them |
 | `.githooks/pre-commit` | Checks the skills mirror, and warns on a change to a template-owned file |
 | `sync-skills.sh` | Checks the mirror; `--apply` re-copies it |

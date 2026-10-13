@@ -237,7 +237,7 @@ fi
 ENV_FILE="$BRAIN/brain.env"
 env_get() { # env_get <key> <default>
   local v=""
-  [ -f "$ENV_FILE" ] && v=$(grep "^$1=" "$ENV_FILE" | tail -n 1 | cut -d= -f2- || true)
+  [ -f "$ENV_FILE" ] && v=$(grep -m 1 "^$1=" "$ENV_FILE" | cut -d= -f2- || true)
   [ -n "$v" ] || v=$2
   expand_home "$v"
 }

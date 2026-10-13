@@ -6,7 +6,7 @@
 
 CASES=(setup-runs commands-resolve seeds-filled demo-repo git-config remote-template
   example-brief-check loop-dry-run idempotent nothing-installed bad-flag extras bad-time
-  ignores-temp-files)
+  ignores-temp-files env-first-wins)
 
 . "$(dirname "$0")/sandbox.sh"
 
@@ -137,6 +137,16 @@ case_ignores_temp_files() {
   [ -z "$listed" ] && pass ignores-temp-files || fail ignores-temp-files "git lists: $listed"
 }
 
+case_env_first_wins() {
+  local rc
+  echo 'DEFAULT_BACKEND=devin' >>"$BRAIN/brain.env"
+  sandbox "$BRAIN/setup.sh" "${SETUP_ARGS[@]}" --kit "$KIT" >"$TMP/setup4.log" 2>&1
+  rc=$?
+  /usr/bin/grep -v -x 'DEFAULT_BACKEND=devin' "$BRAIN/brain.env" >"$TMP/env" && cat "$TMP/env" >"$BRAIN/brain.env"
+  [ "$rc" -eq 0 ] || { fail env-first-wins "exit $rc: $(tail_log "$TMP/setup4.log")"; return; }
+  /usr/bin/grep -q -e '--gate auto --backend claude$' "$TMP/setup4.log" && pass env-first-wins || fail env-first-wins "backend is not claude: $(tail_log "$TMP/setup4.log")"
+}
+
 case_setup_runs
 case_commands_resolve
 case_seeds_filled
@@ -150,6 +160,7 @@ case_nothing_installed
 case_bad_flag
 case_extras
 case_bad_time
+case_env_first_wins
 case_ignores_temp_files
 
 echo "$passed passed, $failed failed"

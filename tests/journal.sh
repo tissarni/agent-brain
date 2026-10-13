@@ -91,6 +91,14 @@ case_backend_hermes() {
     && pass backend-hermes || fail backend-hermes "$(head -n 1 "$c/log/hermes.log" 2>&1)"
 }
 
+case_backend_first_wins() {
+  local c; c=$(new_case backend-first-wins hermes)
+  printf 'DEFAULT_BACKEND=hermes\nDEFAULT_BACKEND=claude\n' >"$c/brain/brain.env"
+  run_job "$c" daily
+  /usr/bin/grep -q -e "^hermes -p default --in $c/brain -z " "$c/log/hermes.log" && [ ! -e "$c/log/claude.log" ] \
+    && pass backend-first-wins || fail backend-first-wins "$(head -n 1 "$c/log/hermes.log" 2>&1)"
+}
+
 case_backend_devin() {
   local c; c=$(new_case backend-devin devin)
   run_job "$c" daily
@@ -163,6 +171,7 @@ case_date_morning
 case_daily_order
 case_weekly_order
 case_backend_hermes
+case_backend_first_wins
 case_backend_devin
 case_log_file
 case_failure_exit
