@@ -5,7 +5,8 @@
 # Output: one "PASS <case>" or "FAIL <case> — <why>" per case, then "<n> passed, <m> failed".
 
 CASES=(setup-runs commands-resolve seeds-filled demo-repo git-config remote-template
-  example-brief-check loop-dry-run idempotent nothing-installed bad-flag extras bad-time)
+  example-brief-check loop-dry-run idempotent nothing-installed bad-flag extras bad-time
+  ignores-temp-files)
 
 . "$(dirname "$0")/sandbox.sh"
 
@@ -126,6 +127,16 @@ case_bad_time() {
   [ $? -eq 2 ] && pass bad-time || fail bad-time "exit was not 2"
 }
 
+case_ignores_temp_files() {
+  local d=$BRAIN/02-projects/example listed
+  : >"$d/x.md.tmp.123"
+  : >"$BRAIN/brain.env.tmp.45"
+  : >"$d/y.html.tmp"
+  listed=$(git -C "$BRAIN" status --porcelain --untracked-files=all | /usr/bin/grep -F -e '.tmp' | paste -s -d'|')
+  rm -f "$d/x.md.tmp.123" "$BRAIN/brain.env.tmp.45" "$d/y.html.tmp"
+  [ -z "$listed" ] && pass ignores-temp-files || fail ignores-temp-files "git lists: $listed"
+}
+
 case_setup_runs
 case_commands_resolve
 case_seeds_filled
@@ -139,6 +150,7 @@ case_nothing_installed
 case_bad_flag
 case_extras
 case_bad_time
+case_ignores_temp_files
 
 echo "$passed passed, $failed failed"
 [ "$failed" -eq 0 ]
