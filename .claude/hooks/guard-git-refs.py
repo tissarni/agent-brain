@@ -14,7 +14,8 @@ profile), a payload is checked only when its `cwd` is this brain or inside it, a
 then come from this file's brain.
 
 Push rules read the subcommand's own arguments: from after `git … push` up to the next
-`&&`, `||`, `;`, `|` or newline. A word like `pre-push` or `merge-base` is not the
+`&&`, `||`, `;`, `|` or newline. Global options are skipped whole, quoted values
+included (`git -C "/a b" push`). A word like `pre-push` or `merge-base` is not the
 subcommand. A force push, a protected target and a bare push are refused.
 A merge is refused when its own arguments name a protected branch with no `/` before it
 (`git merge main`; `git merge origin/main` syncs a feature branch and passes), or when the
@@ -61,10 +62,12 @@ def brain_env(key):
     return ""
 
 
+# One shell word: runs of "…", '…' or plain characters, so a quoted value may hold spaces.
+WORD = r"""(?:"[^"\n]*"|'[^'\n]*'|[^\s"'])+"""
 # `git` and any global options; a subcommand follows.
 GLOBAL = (
-    r"\bgit(?:[ \t]+(?:-C|-c|--git-dir|--work-tree|--namespace|--config-env)[ \t]+\S+"
-    r"|[ \t]+-\S*)*"
+    r"\bgit(?:[ \t]+(?:-C|-c|--git-dir|--work-tree|--namespace|--config-env)[ \t]+" + WORD
+    + r"|[ \t]+-(?:" + WORD + r")?)*"
 )
 # `git`, then any global options, then `commit` as the subcommand, all on one line:
 # `git log --grep commit` and `HEAD^{commit}` are not commits.

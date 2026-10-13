@@ -212,6 +212,21 @@ case_guard_subcommand_args() {
   [ -z "$bad" ] && pass guard-subcommand-args || fail guard-subcommand-args "$bad"
 }
 
+case_guard_quoted_options() {
+  local t="$TMP/g-quoted"; bad=
+  new_guard_brain g-quoted "CODE_ROOT=$t/code"
+  expect 2 'git -C "/a b" push origin main' \
+    "git -C '/a b' push --force origin feat/x" \
+    'git -c user.name="A B" push origin main' \
+    'git --git-dir="/a b/.git" push origin main' \
+    'git -C "/a b" push' \
+    'git -C "/a b" merge main' \
+    "git -c user.name=\"A B\" -C $t/code/app commit -m x"
+  expect 0 'git -C "/a b" push origin feat/x' \
+    'git -c user.name="A B" log --oneline'
+  [ -z "$bad" ] && pass guard-quoted-options || fail guard-quoted-options "$bad"
+}
+
 case_guard_fail_open() {
   local rc
   echo 'not json' | CLAUDE_PROJECT_DIR="$ROOT" python3 "$ROOT/.claude/hooks/guard-git-refs.py" >/dev/null 2>&1; rc=$?
@@ -284,6 +299,7 @@ case_guard_defaults
 case_guard_refusals
 case_guard_commit_subcommand
 case_guard_subcommand_args
+case_guard_quoted_options
 case_guard_hermes_scope
 case_guard_fail_open
 case_ctx_warns
