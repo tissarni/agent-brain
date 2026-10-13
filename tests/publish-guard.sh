@@ -345,7 +345,187 @@ case_list_beside_the_script() {
 }
 case_list_beside_the_script
 
-# <install-and-guarded-cases>
+# install and guarded: each case gets its own clone and its own HOME under $T
+REAL=$(readlink -f "$GUARD")
+mkclone() { git init -q -b main "$T/c-$1"; }
+nohome() { [ ! -e "$T/h-$1/.local/bin/publish-guard" ] && [ ! -L "$T/h-$1/.local/bin/publish-guard" ]; }
+install_in() {  # install_in <case> [env assignments...]: install into the case's clone and HOME
+  local n="$1"
+  shift
+  env HOME="$T/h-$n" "$@" "$GUARD" install "$T/c-$n" >"$T/out" 2>&1
+}
+
+case_install_writes_the_hook() {
+  local n=writes got
+  mkclone $n
+  # a launcher session sets core.hooksPath at the command scope: install ignores it
+  install_in $n GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0="$T/launcher-hooks"
+  got=$?
+  [ "$got" -eq 0 ] || { fail install-writes-the-hook "exit $got, wanted 0"; return; }
+  [ -x "$T/c-$n/.git/hooks/pre-push" ] || { fail install-writes-the-hook "no executable hook"; return; }
+  [ "$(sed -n 1p "$T/c-$n/.git/hooks/pre-push")" = '#!/bin/sh' ] || { fail install-writes-the-hook "bad first line"; return; }
+  [ "$(sed -n 2p "$T/c-$n/.git/hooks/pre-push")" = "exec '$REAL' pre-push \"\$@\"" ] || { fail install-writes-the-hook "bad exec line"; return; }
+  [ "$(readlink -f "$T/h-$n/.local/bin/publish-guard")" = "$REAL" ] || { fail install-writes-the-hook "the link does not resolve to the script"; return; }
+  pass install-writes-the-hook
+}
+case_install_writes_the_hook
+
+case_install_is_idempotent() {
+  local n=idem got before
+  mkclone $n
+  install_in $n
+  before=$(cksum <"$T/c-$n/.git/hooks/pre-push")
+  install_in $n
+  got=$?
+  [ "$got" -eq 0 ] || { fail install-is-idempotent "second run: exit $got, wanted 0"; return; }
+  [ "$(cksum <"$T/c-$n/.git/hooks/pre-push")" = "$before" ] || { fail install-is-idempotent "the hook changed"; return; }
+  "$GREP" -q 'nothing to do' "$T/out" || { fail install-is-idempotent "no nothing-to-do message"; return; }
+  pass install-is-idempotent
+}
+case_install_is_idempotent
+
+case_install_refuses_a_foreign_hook() {
+  local n=foreign got
+  mkclone $n
+  printf '#!/bin/sh\necho other\n' >"$T/c-$n/.git/hooks/pre-push"
+  install_in $n
+  got=$?
+  [ "$got" -eq 2 ] || { fail install-refuses-a-foreign-hook "exit $got, wanted 2"; return; }
+  [ "$(sed -n 2p "$T/c-$n/.git/hooks/pre-push")" = 'echo other' ] || { fail install-refuses-a-foreign-hook "the hook was changed"; return; }
+  "$GREP" -qF "$T/c-$n/.git/hooks/pre-push" "$T/out" || { fail install-refuses-a-foreign-hook "the message does not name the hook"; return; }
+  nohome $n || { fail install-refuses-a-foreign-hook "a link was written"; return; }
+  pass install-refuses-a-foreign-hook
+}
+case_install_refuses_a_foreign_hook
+
+case_install_refuses_hooks_path() {
+  local n=hookspath got
+  mkclone $n
+  git -C "$T/c-$n" config core.hooksPath .githooks
+  install_in $n
+  got=$?
+  [ "$got" -eq 2 ] || { fail install-refuses-hooks-path "exit $got, wanted 2"; return; }
+  "$GREP" -qE 'core\.hooksPath.*\.githooks.*config' "$T/out" || { fail install-refuses-hooks-path "the message does not name the value and its origin"; return; }
+  [ ! -e "$T/c-$n/.git/hooks/pre-push" ] || { fail install-refuses-hooks-path "a hook was written"; return; }
+  nohome $n || { fail install-refuses-hooks-path "a link was written"; return; }
+  pass install-refuses-hooks-path
+}
+case_install_refuses_hooks_path
+
+# a missing list is created with comment lines only, and a list with no pattern refuses
+NEWLIST="$T/brain/publish-guard.patterns"
+mkdir -p "$T/brain"
+case_install_creates_the_list() {
+  local n=creates
+  mkclone $n
+  install_in $n PUBLISH_GUARD_PATTERNS="$NEWLIST"
+  [ -s "$NEWLIST" ] || { fail install-creates-the-list "no list was created"; return; }
+  if "$GREP" -qv '^#' "$NEWLIST"; then fail install-creates-the-list "the new list holds more than comments"; return; fi
+  pass install-creates-the-list
+}
+case_install_creates_the_list
+
+case_install_refuses_an_empty_list() {
+  local n=empty got
+  mkclone $n
+  install_in $n PUBLISH_GUARD_PATTERNS="$NEWLIST"
+  got=$?
+  [ "$got" -eq 2 ] || { fail install-refuses-an-empty-list "exit $got, wanted 2"; return; }
+  [ ! -e "$T/c-$n/.git/hooks/pre-push" ] || { fail install-refuses-an-empty-list "a hook was written"; return; }
+  nohome $n || { fail install-refuses-an-empty-list "a link was written"; return; }
+  pass install-refuses-an-empty-list
+}
+case_install_refuses_an_empty_list
+
+case_install_links_on_path() {
+  local n=links
+  mkclone $n
+  install_in $n PATH="/usr/bin:/bin"
+  "$GREP" -q 'not on PATH' "$T/out" || { fail install-links-on-path "no note when ~/.local/bin is off PATH"; return; }
+  [ "$(readlink -f "$T/h-$n/.local/bin/publish-guard")" = "$REAL" ] || { fail install-links-on-path "no link"; return; }
+  mkclone ${n}2
+  env HOME="$T/h-$n" PATH="$T/h-$n/.local/bin:$PATH" "$GUARD" install "$T/c-${n}2" >"$T/out" 2>&1
+  if "$GREP" -q 'not on PATH' "$T/out"; then fail install-links-on-path "a note although ~/.local/bin is on PATH"; return; fi
+  pass install-links-on-path
+}
+case_install_links_on_path
+
+case_install_refuses_a_foreign_link() {
+  local n=flink got
+  mkclone $n
+  mkdir -p "$T/h-$n/.local/bin"
+  ln -s /bin/true "$T/h-$n/.local/bin/publish-guard"
+  install_in $n
+  got=$?
+  [ "$got" -eq 2 ] || { fail install-refuses-a-foreign-link "exit $got, wanted 2"; return; }
+  [ ! -e "$T/c-$n/.git/hooks/pre-push" ] || { fail install-refuses-a-foreign-link "a hook was written"; return; }
+  [ "$(readlink "$T/h-$n/.local/bin/publish-guard")" = /bin/true ] || { fail install-refuses-a-foreign-link "the link was changed"; return; }
+  pass install-refuses-a-foreign-link
+}
+case_install_refuses_a_foreign_link
+
+case_installed_hook_refuses_a_hit() {
+  local n=live c="$T/c-live" before
+  mkclone $n
+  git init -q --bare "$T/live.git"
+  git -C "$c" remote add origin "$T/live.git"
+  install_in $n
+  printf 'clean\n' >"$c/b.txt"
+  git -C "$c" add -A && git -C "$c" commit -q -m 'add b'
+  before=$(git -C "$c" rev-parse HEAD)
+  git -C "$c" switch -q -c hit
+  printf 'built for acme\n' >"$c/a.txt"
+  git -C "$c" add -A && git -C "$c" commit -q -m 'add a'
+  if git -C "$c" push -q origin hit >"$T/out" 2>&1; then fail installed-hook-refuses-a-hit "a hit went through"; return; fi
+  [ -z "$(git -C "$T/live.git" for-each-ref)" ] || { fail installed-hook-refuses-a-hit "the remote changed"; return; }
+  git -C "$c" push -q origin main >"$T/out" 2>&1 || { fail installed-hook-refuses-a-hit "a clean push was refused"; return; }
+  [ "$(git -C "$T/live.git" rev-parse refs/heads/main)" = "$before" ] || { fail installed-hook-refuses-a-hit "the clean push did not land"; return; }
+  pass installed-hook-refuses-a-hit
+}
+case_installed_hook_refuses_a_hit
+
+case_guarded_yes() {
+  local got
+  "$GUARD" guarded "$T/c-live" >"$T/out" 2>&1
+  got=$?
+  [ "$got" -eq 0 ] || { fail guarded-yes "exit $got, wanted 0"; return; }
+  [ ! -s "$T/out" ] || { fail guarded-yes "it printed something"; return; }
+  pass guarded-yes
+}
+case_guarded_yes
+
+case_guarded_reads_a_hand_written_hook() {
+  local n=hand got
+  mkclone $n
+  printf '#!/bin/sh\nexec /opt/tools/publish-guard pre-push "$@"\n' >"$T/c-$n/.git/hooks/pre-push"
+  "$GUARD" guarded "$T/c-$n" >"$T/out" 2>&1
+  got=$?
+  [ "$got" -eq 0 ] || { fail guarded-reads-a-hand-written-hook "unquoted form: exit $got, wanted 0"; return; }
+  printf '#!/bin/sh\nexec "/opt/tools/publish-guard.sh" pre-push "$@"\n' >"$T/c-$n/.git/hooks/pre-push"
+  "$GUARD" guarded "$T/c-$n" >"$T/out" 2>&1
+  got=$?
+  [ "$got" -eq 0 ] || { fail guarded-reads-a-hand-written-hook "double-quoted form: exit $got, wanted 0"; return; }
+  printf '#!/bin/sh\necho other\n' >"$T/c-$n/.git/hooks/pre-push"
+  "$GUARD" guarded "$T/c-$n" >"$T/out" 2>&1
+  got=$?
+  [ "$got" -eq 1 ] || { fail guarded-reads-a-hand-written-hook "foreign hook: exit $got, wanted 1"; return; }
+  pass guarded-reads-a-hand-written-hook
+}
+case_guarded_reads_a_hand_written_hook
+
+case_guarded_no_or_not_a_repo() {
+  local got
+  mkclone bare-hooks
+  "$GUARD" guarded "$T/c-bare-hooks" >"$T/out" 2>&1
+  got=$?
+  [ "$got" -eq 1 ] || { fail guarded-no-or-not-a-repo "no hook: exit $got, wanted 1"; return; }
+  mkdir -p "$T/plain"
+  "$GUARD" guarded "$T/plain" >"$T/out" 2>&1
+  got=$?
+  [ "$got" -eq 2 ] || { fail guarded-no-or-not-a-repo "not a repo: exit $got, wanted 2"; return; }
+  pass guarded-no-or-not-a-repo
+}
+case_guarded_no_or_not_a_repo
 
 echo "$passed passed, $failed failed"
 [ "$failed" -eq 0 ]
