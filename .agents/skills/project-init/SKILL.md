@@ -42,17 +42,17 @@ Add `[[backlinks]]` to the parent and to everything in `related:`.
 02-projects/<name>/
 ├── README.md     ← 5-line pointer
 ├── context.md    ← from _templates/main-context.md
-├── _index.md     ← run /rollup (writes the empty-state file)
+├── _index.md     ← the step-3 /rollup writes it (empty-state file)
 ├── current.md
 ├── decisions/
 └── subprojects/  ← create the empty dir
 ```
 
 ## Step 3 — wire it up
-1. For a sub: run `/rollup <main>` so the parent index picks it up. **Not optional** —
-   an unindexed sub is invisible to every future session.
-2. Add one line to the `## Active projects` tree in `AGENTS.local.md`, nested under its
-   main for a sub. If that file is missing, create it first with three headings:
-   `## Who I am`, `## Active projects` and `## Local rules`.
+1. If `AGENTS.local.md` is missing, create it with three headings, one blank line after
+   each: `## Who I am`, `## Active projects` and `## Local rules`.
+2. Run `/rollup <main>`, for a sub's main or for the new main itself. It indexes the project
+   and writes the main's tree line. **Not optional** — an unindexed project is invisible to
+   every future session. Never add a tree line by hand: `/rollup` would duplicate it.
 3. Do **not** create any `.md` in the code repo. Bridge context stays vault-side.
 4. Last, apply the rules filed under `### /project-init` in `AGENTS.local.md` § Local rules, if there are any.

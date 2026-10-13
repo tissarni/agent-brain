@@ -6,7 +6,8 @@ description: Regenerate a main project's _index.md from its sub-projects' frontm
 Arguments: main project folder name (e.g. `web-app`). No argument → regenerate all mains.
 
 ## Token budget — this is the whole point of the skill
-Reads: **frontmatter only** of each `subprojects/*/context.md`.
+Reads: **frontmatter only** of each `subprojects/*/context.md`, plus the main's own
+`context.md` frontmatter and `AGENTS.local.md`'s `## Active projects` section, one read each.
 Stop reading each file at the closing `---`. Never read a body. Never open
 `current.md`, `decisions/`, `specs/` or `_archive/`.
 A main with 13 subs costs ~13 × 15 lines, not 13 × 400.
@@ -31,8 +32,10 @@ A main with 13 subs costs ~13 × 15 lines, not 13 × 400.
    - `summary` over 160 chars, `blocker` over 120
    - `related:` naming a project that does not exist
 5. Overwrite `02-projects/<main>/_index.md` with the template below.
-6. Report: subs indexed, counts per status, validation warnings.
-7. Last, apply the rules filed under `### /rollup` in `AGENTS.local.md` § Local rules, if there are any.
+6. Rewrite the main's line in `AGENTS.local.md` § Active projects (rules below).
+7. Report: subs indexed, counts per status, validation warnings, and the tree line's
+   outcome: changed, unchanged, appended, or skipped, and why.
+8. Last, apply the rules filed under `### /rollup` in `AGENTS.local.md` § Local rules, if there are any.
 
 ## Output template — exact
 ```markdown
@@ -67,6 +70,55 @@ Read order: this file → parent `context.md` → the one sub's `current.md`. Ne
 Section membership: Active = `active` + `blocked` + `impl-done`. Paused = `paused`. Done = `done`.
 Within a section sort by status then name. Done rows link to `summary`, all others to `context`.
 Omit empty sections. Omit **Cross-project links** when no sub has `related:`.
+
+## The tree line — step 6
+Status → emoji, and the legend's order, which the counts and sub lines follow:
+🟢 active · 🔴 blocked · 🟡 impl-done · ⚪ done · ⏸ paused.
+
+Write, never ask: this skill runs unattended, so it writes the line and reports. Touch
+only the main's own line and the sub lines right below it; every other byte of
+`AGENTS.local.md` stays.
+
+- **Main line:** `- **<main>** <emoji> — <counts> — <description>`. `<emoji>` is the main's
+  own `context.md` `status:`. `<counts>` is one `<emoji><n>` per sub status with n > 0,
+  space-separated, in the legend's order. Separators are ` — ` (em dash, a space each side).
+- **Sub lines:** one line per non-empty status group, in the legend's order: two spaces,
+  `- `, then the names sorted and joined by ` · `. The active line has no marker; every
+  other line starts with its emoji and a space.
+- **Description:** kept word for word. It is the text after the counts segment, the second
+  ` — ` field. A counts segment is made only of `<emoji><digits>` tokens. A main with no
+  subs has no counts segment: `- **<main>** <emoji> — <description>`; when the second field
+  is not a counts segment, the description starts after the first ` — `.
+- **Replaced:** the main's line and the lines right below it that start with two spaces
+  and `- `.
+- **No line yet:** append one after the last list line of § Active projects, with the
+  main's `summary:` as the description. With no list line in the section, put it at the
+  section's end, before the blank line that precedes the next `## ` heading; when no blank
+  line precedes that heading, directly before it, followed by one blank line.
+- **Status outside the five** (missing, or not a legend status), on a sub or the main: leave
+  it out of the counts and sub lines, and report a validation warning.
+- **A tree line whose main folder no longer exists:** keep it, and report it.
+- **No `AGENTS.local.md`, or no `## Active projects` in it:** report, write nothing.
+  `/project-init` creates that file.
+
+The example main is `status: active` with one active sub, so on an untouched new brain the
+rewrite must give exactly these two lines (`./setup.sh --remove-example` deletes them only
+on an exact match):
+
+```
+- **example** 🟢 — 🟢1 — a demo main to try the handoff kit on; ./setup.sh --remove-example deletes it
+  - example-version-flag
+```
+
+A main with several statuses:
+
+```
+- **web-app** 🟢 — 🟢2 🔴1 🟡1 ⚪2 — the customer-facing app
+  - login-timeout · search-filters
+  - 🔴 sso-migration
+  - 🟡 dark-mode
+  - ⚪ cache-ttl · old-banner
+```
 
 ## When to run
 - After `/adr` changes a sub's status or key decisions

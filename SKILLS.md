@@ -179,6 +179,10 @@ Validates and reports without silently fixing: `parent:` disagreeing with the fo
 `status: blocked` with no `blocker:`, `status: done` with no `summary.md`, over-long
 `summary`/`blocker`, `related:` naming a project that does not exist.
 
+Also rewrites the main's line in the `AGENTS.local.md` § Active projects tree: its status,
+one count per sub status, and its subs by name, grouped by status. The description is kept
+word for word, no other line is touched, and it never asks before writing.
+
 **Never hand-edit an `_index.md`** — change the sub's frontmatter and rerun this.
 
 ---
@@ -200,8 +204,8 @@ Scaffolds from `_templates/`, filling frontmatter completely — `parent:` and `
 are what the parent's `_index.md` is built from.
 
 Then wires it up: runs `/rollup <main>` (**not optional** — an unindexed sub is invisible
-to every future session) and adds one line to the `## Active projects` tree in
-**`AGENTS.local.md`**.
+to every future session); that `/rollup` writes the main's line in the `## Active projects`
+tree in **`AGENTS.local.md`**.
 
 Creates no `.md` in the code repo. Bridge context stays vault-side.
 
