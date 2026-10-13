@@ -3,9 +3,20 @@
 # Wired to the Claude Code Stop hook so the vault versions itself without anyone thinking
 # about it. Safe to run by hand at any time.
 #
+# Hermes calls it as an on_session_end hook with --hermes-hook (see below).
+#
 # Always exits 0 — a failed auto-commit must never break the session or a turn.
 
 cd "$(dirname "$0")" || exit 0
+
+# As a hermes on_session_end hook (setup.sh registers it): commit only when the hermes
+# process ran in this brain or below it. Its JSON payload on stdin names that directory.
+if [ "${1-}" = --hermes-hook ]; then
+  CWD=$(python3 -I -c 'import json, sys; print(json.load(sys.stdin).get("cwd") or "")' 2>/dev/null) || exit 0
+  [ -n "$CWD" ] && [ -d "$CWD" ] || exit 0
+  CWD=$(cd "$CWD" && pwd -P) || exit 0
+  case "$CWD/" in "$(pwd -P)"/*) ;; *) exit 0 ;; esac
+fi
 git rev-parse --git-dir >/dev/null 2>&1 || exit 0
 
 # Keep the generated skills mirror fresh FIRST. Otherwise the pre-commit guard

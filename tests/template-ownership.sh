@@ -171,6 +171,25 @@ case_autocommit_caps_list() {
   [[ "$OUT" == *"+2 more"* ]] && [ "$BEFORE" != "$AFTER" ] && pass autocommit-caps-list || fail autocommit-caps-list "out: $OUT"
 }
 
+case_autocommit_hermes_scope() {
+  local d x bad= before; d=$(downstream autocommit-hermes yes no)
+  echo change >> "$d/notes/a.md"
+  before=$(git -C "$d" rev-parse HEAD)
+  hook() { # hook <stdin>: runs the hermes hook, sets $rc
+    printf '%s' "$1" | sh "$d/auto-commit.sh" --hermes-hook >/dev/null 2>&1; rc=$?
+  }
+  mkdir -p "$d-x"
+  for x in "$TMP" "$d-x" ""; do
+    hook "$(python3 -I -c 'import json,sys; print(json.dumps({"hook_event_name": "on_session_end", "cwd": sys.argv[1]}))' "$x")"
+    [ "$rc" = 0 ] && [ "$(git -C "$d" rev-parse HEAD)" = "$before" ] || bad="$bad [cwd '$x': rc $rc or committed]"
+  done
+  hook 'not json'
+  [ "$rc" = 0 ] && [ "$(git -C "$d" rev-parse HEAD)" = "$before" ] || bad="$bad [not json: rc $rc or committed]"
+  hook "$(python3 -I -c 'import json,sys; print(json.dumps({"hook_event_name": "on_session_end", "cwd": sys.argv[1]}))' "$d/notes")"
+  [ "$rc" = 0 ] && [ "$(git -C "$d" rev-parse HEAD)" != "$before" ] || bad="$bad [cwd inside: no commit]"
+  [ -z "$bad" ] && pass autocommit-hermes-scope || fail autocommit-hermes-scope "$bad"
+}
+
 case_files_lists_covered
 case_files_staged
 case_files_usage
@@ -181,6 +200,7 @@ case_hook_mirror_still_refuses
 case_autocommit_warns_downstream
 case_autocommit_quiet_local
 case_autocommit_caps_list
+case_autocommit_hermes_scope
 
 echo "$passed passed, $failed failed"
 [ "$failed" -eq 0 ]
