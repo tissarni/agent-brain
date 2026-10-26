@@ -31,7 +31,7 @@ def require(condition, why):
         raise CheckError(why)
 
 
-def run(args, cwd, env, timeout=60, log=None):
+def run(args, cwd, env, timeout=60, log=None, allow_unset=False):
     """Bounded foreground commands, killing the whole process group on timeout."""
     with contextlib.ExitStack() as stack:
         # Reserve before running any child: a late symlink cannot redirect writes.
@@ -52,6 +52,8 @@ def run(args, cwd, env, timeout=60, log=None):
     # Agent output can contain credentials. Keep it in private launcher artifacts,
     # never interpolate it into diagnostic messages or reports.
     if proc.returncode != 0:
+        if allow_unset and 'Config key not set' in out:
+            return 'null'
         raise CommandFailed('%s exited %s (inspect private fixture logs)' % (Path(args[0]).name, proc.returncode))
     return out
 
@@ -263,6 +265,127 @@ def isolate_launcher_home(f, backend, env):
     return env
 
 
+def backend_diagnostics(brain, backend, record, home=None, hermes=None):
+    """Registration evidence only; never run hook strings, auth or model commands.
+
+    Paths/profile selection follow kit v1.0.1, not the active operator profile.
+    Config CLI output and exceptions are deliberately never included in reports.
+    """
+    import datetime
+
+    home = home or Path.home()
+
+    def audit(name, fn):
+        try:
+            detail = fn()
+            if detail is not None:
+                record(name, 'PASS', detail)
+        except CommandFailed:
+            record(name, 'NOT TESTED', 'read-only config query unsupported or failed; values hidden')
+        except (CheckError, OSError, ValueError, TypeError, KeyError, AttributeError):
+            record(name, 'FAIL', 'missing, malformed, mismatched or stale registration; values hidden')
+
+    def object_file(path):
+        data = json.loads(plain_file(path))
+        require(isinstance(data, dict), 'expected object')
+        return data
+
+    def claude_hooks():
+        settings = object_file(brain / '.claude/settings.json')
+        local = brain / '.claude/settings.local.json'
+        override = object_file(local) if local.exists() or local.is_symlink() else {}
+        require(not settings.get('disableAllHooks') and not override.get('disableAllHooks'), 'hooks disabled')
+        hooks = settings.get('hooks')
+        require(isinstance(hooks, dict), 'missing hooks')
+        extra = override.get('hooks', {})
+        require(isinstance(extra, dict), 'invalid local hooks')
+        # Conservatively audit explicit event overrides too: an empty or divergent
+        # override must not be called working wiring based only on the base file.
+        expected = [
+            ('UserPromptSubmit', None, 'sh "$CLAUDE_PROJECT_DIR/context-guard.sh"', 'context-guard.sh'),
+            ('PreToolUse', 'Bash', 'python3 "$CLAUDE_PROJECT_DIR/.claude/hooks/guard-git-refs.py"', '.claude/hooks/guard-git-refs.py'),
+            ('Stop', None, 'sh "$(git rev-parse --show-toplevel)/auto-commit.sh"', 'auto-commit.sh'),
+        ]
+        for event, matcher, command, script in expected:
+            plain_file(brain / script)
+            for entries in [hooks.get(event)] + ([extra[event]] if event in extra else []):
+                require(isinstance(entries, list), 'invalid hook list')
+                matches = [h for entry in entries if isinstance(entry, dict) and entry.get('matcher') == matcher
+                           for h in entry.get('hooks', []) if isinstance(h, dict) and h.get('type') == 'command' and h.get('command') == command]
+                require(len(matches) == 1, 'missing or ambiguous hook')
+        return 'context/guard/auto-commit command and matcher registrations + scripts verified; user-scope policy and runtime NOT TESTED'
+
+    if backend == 'claude':
+        audit('claude brain hooks', claude_hooks)
+    elif backend == 'hermes':
+        cli = hermes or shutil.which('hermes')
+        expected_homes = {p: home / '.hermes' / 'profiles' / p for p in ['review', 'run', 'close']}
+        expected_homes['default'] = home / '.hermes'
+
+        def query(profile, *args):
+            require(cli is not None, 'missing hermes')
+            return run([cli, '-p', profile, 'config', *args], brain, dict(os.environ), timeout=15,
+                       allow_unset=bool(args and args[0] == 'get')).strip()
+
+        def bound_config(profile):
+            expected = expected_homes[profile] / 'config.yaml'
+            plain_file(expected)
+            actual = query(profile, 'path')
+            require(Path(actual).absolute() == expected.absolute(), 'wrong profile path')
+            return expected
+
+        def profile_config(profile):
+            bound_config(profile)
+            if profile != 'default':
+                require(bool(plain_file(expected_homes[profile] / 'SOUL.md').strip()), 'missing role instructions')
+            model = json.loads(query(profile, 'get', 'model', '--json', '--raw'))
+            require(isinstance(model, dict) and isinstance(model.get('default'), str) and bool(model['default'].strip()), 'missing model')
+            # Provider may legitimately be omitted (Hermes auto-detects it).
+            require('provider' not in model or isinstance(model['provider'], str) and bool(model['provider'].strip()), 'invalid provider')
+            return 'exact launcher profile/config binding, model selection and role instructions present; credentials/provider reachability NOT TESTED'
+
+        for profile in ['review', 'run', 'close', 'default']:
+            audit('hermes profile ' + profile, lambda profile=profile: profile_config(profile))
+
+        def hermes_hooks():
+            cfg = bound_config('default')
+            guard, auto = brain / '.claude/hooks/guard-git-refs.py', brain / 'auto-commit.sh'
+            expected = {
+                'pre_tool_call': ({'command': 'python3 ' + shlex.quote(str(guard)), 'matcher': 'terminal', 'timeout': 10}, guard),
+                'on_session_end': ({'command': 'sh ' + shlex.quote(str(auto)) + ' --hermes-hook', 'timeout': 30}, auto),
+            }
+            lists = {}
+            for event in expected:
+                value = json.loads(query('default', 'get', 'hooks.' + event, '--json', '--raw'))
+                lists[event] = [] if value is None else value
+                require(isinstance(lists[event], list) and all(isinstance(e, dict) for e in lists[event]), 'invalid hook list')
+            # No registration is a valid declined optional choice. A recognisable
+            # brain command in either event makes the pair required, never optional.
+            present = any(any(str(script) in str(e.get('command', '')) or brain.as_posix() in str(e.get('command', ''))
+                              for e in lists[event]) for event, (_, script) in expected.items())
+            if not present:
+                record('hermes brain hooks', 'NOT CONFIGURED', 'optional default-profile hooks absent; role profiles do not require these brain-only hooks')
+                return None
+            approvals = object_file(cfg.parent / 'shell-hooks-allowlist.json').get('approvals')
+            require(isinstance(approvals, list), 'invalid approvals')
+            for event, (entry, script) in expected.items():
+                plain_file(script)
+                matches = [e for e in lists[event] if e.get('command') == entry['command']]
+                require(len(matches) == 1 and all(matches[0].get(k) == v for k, v in entry.items()), 'wrong registration')
+                require(matches[0].get('matcher') == entry.get('matcher'), 'wrong matcher')
+                approved = [a for a in approvals if isinstance(a, dict) and a.get('event') == event and a.get('command') == entry['command']]
+                require(len(approved) == 1, 'missing approval')
+                stamp = datetime.datetime.fromisoformat(approved[0]['script_mtime_at_approval'].replace('Z', '+00:00'))
+                require(stamp.tzinfo is not None and abs(stamp.timestamp() - script.stat().st_mtime) < 0.000001, 'stale approval')
+                require(datetime.datetime.fromisoformat(approved[0]['approved_at'].replace('Z', '+00:00')).tzinfo is not None, 'invalid approval date')
+            return 'default-profile event/command/matcher registrations, scripts and fresh mtime approvals verified; hook execution NOT TESTED'
+
+        audit('hermes brain hooks', hermes_hooks)
+    else:
+        record('devin configuration', 'NOT TESTED', 'Devin has no kit role profiles; executable discovery only, auth and runtime not queried')
+    record('backend authentication/runtime', 'NOT TESTED', 'no auth, model, login, hook execution or configuration mutation performed')
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--brain', type=Path, default=SOURCE, help='installed brain root (read-only)')
@@ -309,6 +432,7 @@ def main(argv=None):
         check(command, lambda command=command: str(shutil.which(command) or require(False, 'missing command')))
     backend = args.backend or config.get('DEFAULT_BACKEND', 'claude')
     check('backend executable', lambda: str(shutil.which(backend) or require(False, 'missing backend')))
+    backend_diagnostics(brain, backend, record)
     env = git_environment(dict(os.environ))
     fixture = None
     # Unique directory under the OS's configured TMPDIR; no CODE_ROOT/user demo read or write.

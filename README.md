@@ -129,6 +129,34 @@ A successful free run exits 0 but
 prints **live handoff: NOT TESTED**; this is not end-to-end PASS. Missing prerequisites
 or malformed configured integrations exit 1. Usage errors exit 2.
 
+Backend registration checks are read-only and selected-backend-specific:
+
+- **Claude:** reads only the brain's `.claude/settings.json` and optional
+  `settings.local.json`; checks context, Bash guard and auto-commit event/command/
+  matcher bindings and script files. Disabled hooks, malformed settings or a local
+  event override lacking the expected registration fail conservatively. User/global
+  policy and actual hook execution remain **NOT TESTED**.
+- **Hermes:** the pinned kit uses `review`, `run`, `close`, and `default` for notes
+  stages, regardless of the interactive profile. For those exact profiles the checker
+  verifies config-file presence, `hermes -p <profile> config path` binding, role
+  `SOUL.md` presence and the selected `model` object via `config get --json --raw`.
+  A nonempty default model is required; provider can be omitted for auto-selection.
+  No credentials are read. Optional brain hooks belong to **default only**, as in
+  setup: event lists are queried read-only; commands, matcher, scripts and exact
+  script-mtime approvals in `shell-hooks-allowlist.json` must agree. An absent pair
+  is **NOT CONFIGURED**, not failure; a partially registered pair fails. No role
+  profile is required to carry these brain-only hooks. Unsupported/failed config
+  queries are **NOT TESTED**, not PASS; missing/malformed required files or values fail.
+- **Devin:** has no kit role-profile contract; configuration support is explicitly
+  **NOT TESTED**, never a fabricated profile PASS.
+
+These checks do not execute hook commands or authenticate. Registration PASS proves
+neither provider reachability nor semantic correctness of customized role instructions.
+Paths follow kit v1.0.1's `$HOME/.hermes` contract; a CLI redirected to a different
+profile/config root fails binding verification rather than silently auditing it.
+Config values, command output and exceptions are not printed. The only backend CLI
+operations in free mode are the bounded Hermes `config path/get` queries above.
+
 `--live` uses the installed launcher for review → revise → run → close → debrief.
 Every invocation creates unique private directories under `TMPDIR` (or the OS temp
 directory): disposable notes, a tiny code repo and its local bare origin. The version
