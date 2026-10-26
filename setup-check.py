@@ -16,6 +16,31 @@ import tempfile
 
 SOURCE = Path(__file__).resolve().parent
 REVISION = '2026-10-10-r1'
+# Static protocol clauses from kit v1.0.1. These prove role wiring, not that
+# arbitrary customized instructions are semantically safe or will be obeyed.
+ROLE_CONTRACTS = {
+    'review': ['# Review profile', 'You are **read-only**: no edits, no commits, no branch changes, no installs, no\npushes.', '''=== HANDOFF REVIEW ===
+brief-revision: <echoed from the brief's revision: frontmatter>
+repo: <basename of the working directory>   branch: <actual current branch>   tree: clean | <n> modified
+lenses: does-it-run, claim-by-claim, premise-and-scope
+verified: <n> attacked, <n> dropped
+verdict: RUN | REVISE | REWRITE
+--- FINDINGS ---
+[BLOCKER|WRONG|MISSING|RISK|SCOPE] <one line>
+  claim:    "<quoted from the brief>"
+  actual:   <what the repo shows>
+  evidence: <command run, or path:line>
+  fix:      <what the brief should say instead>
+--- UNVERIFIABLE ---
+- <claim> — needs <write|network|credential>, not checked
+--- MISSING FROM BRIEF ---
+- <what the runner would have to guess>
+=== END HANDOFF REVIEW ==='''],
+    'run': ['# Run profile', 'End with the completion report exactly as your prompt defines it:',
+            '`outcome: COMPLETE` only when every Done-when holds and the report\'s not-done section is\nempty.'],
+    'close': ['# Close profile', 'You are **read-only**: no edits, no commits, no branch changes, no installs, no pushes.',
+              'End with the audit block exactly as your prompt defines it, and nothing after it.'],
+}
 
 
 class CheckError(Exception):
@@ -335,11 +360,25 @@ def backend_diagnostics(brain, backend, record, home=None, hermes=None):
             return expected
 
         def profile_config(profile):
-            bound_config(profile)
+            cfg = bound_config(profile)
             if profile != 'default':
-                require(bool(plain_file(expected_homes[profile] / 'SOUL.md').strip()), 'missing role instructions')
+                soul = plain_file(expected_homes[profile] / 'SOUL.md')
+                require(all(clause in soul for clause in ROLE_CONTRACTS[profile]), 'missing role protocol contract')
             model = json.loads(query(profile, 'get', 'model', '--json', '--raw'))
             require(isinstance(model, dict) and isinstance(model.get('default'), str) and bool(model['default'].strip()), 'missing model')
+            # Mirror the pinned launcher's small awk reader exactly: its model is
+            # a literal two-space default scalar, NOT necessarily the CLI value.
+            in_model, launcher_model = False, None
+            for line in plain_file(cfg).splitlines():
+                if line.startswith('model:'):
+                    in_model = True
+                    continue
+                if line and not line.startswith(' '):
+                    in_model = False
+                if in_model and line.startswith('  default:'):
+                    launcher_model = re.sub(r'^  default: *', '', line)
+                    break
+            require(launcher_model == model['default'], 'CLI and launcher model disagree')
             # Provider may legitimately be omitted (Hermes auto-detects it).
             require('provider' not in model or isinstance(model['provider'], str) and bool(model['provider'].strip()), 'invalid provider')
             return 'exact launcher profile/config binding, model selection and role instructions present; credentials/provider reachability NOT TESTED'

@@ -139,7 +139,13 @@ Backend registration checks are read-only and selected-backend-specific:
 - **Hermes:** the pinned kit uses `review`, `run`, `close`, and `default` for notes
   stages, regardless of the interactive profile. For those exact profiles the checker
   verifies config-file presence, `hermes -p <profile> config path` binding, role
-  `SOUL.md` presence and the selected `model` object via `config get --json --raw`.
+  `SOUL.md` role/protocol clauses (including the exact review output block) and the
+  selected `model` object via `config get --json --raw`. The model must also equal
+  the literal `model.default` read by the pinned launcher's parser; quoted/commented
+  scalars or a redirected CLI that disagree with that parser fail rather than
+  certifying a different model. Customized SOUL prose is preserved, but removing
+  required protocol clauses fails. This is static contract presence, not a semantic
+  audit of every customized instruction.
   A nonempty default model is required; provider can be omitted for auto-selection.
   No credentials are read. Optional brain hooks belong to **default only**, as in
   setup: event lists are queried read-only; commands, matcher, scripts and exact

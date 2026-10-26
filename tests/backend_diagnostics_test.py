@@ -36,7 +36,7 @@ class BackendDiagnostics(unittest.TestCase):
             d = self.home / '.hermes' if profile == 'default' else self.home / '.hermes/profiles' / profile
             d.mkdir(parents=True, exist_ok=True)
             (d / 'config.yaml').write_text('model:\n  default: example\n')
-            (d / 'SOUL.md').write_text('Role instructions')
+            (d / 'SOUL.md').write_text('\n\n'.join(c.ROLE_CONTRACTS.get(profile, ['Notes instructions'])))
             self.responses[f'-p {profile} config path'] = str(d / 'config.yaml')
             self.responses[f'-p {profile} config get model --json --raw'] = json.dumps({'default': 'example', 'provider': 'auto'})
         for event in ['pre_tool_call', 'on_session_end']:
@@ -84,6 +84,13 @@ class BackendDiagnostics(unittest.TestCase):
     def test_missing_role_instructions(self):
         (self.home / '.hermes/profiles/run/SOUL.md').unlink()
         self.assertEqual(self.diagnose()['hermes profile run'], 'FAIL')
+
+    def test_mismatched_launcher_model_and_wrong_role_contract(self):
+        (self.home / '.hermes/profiles/run/config.yaml').write_text('model:\n  default: wrong-model\n')
+        self.assertEqual(self.diagnose()['hermes profile run'], 'FAIL')
+        (self.home / '.hermes/profiles/review/SOUL.md').write_text('unrelated instructions; no review contract')
+        self.results = []
+        self.assertEqual(self.diagnose()['hermes profile review'], 'FAIL')
 
     def test_malformed_missing_and_mismatched_model(self):
         for value in ['{bad', 'null', '{}', '{"default": ""}', '{"default": ["bad"]}']:
@@ -148,6 +155,15 @@ class BackendDiagnostics(unittest.TestCase):
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_text('not executed')
         return d
+
+    def test_role_protocol_clauses_match_pinned_kit(self):
+        kit = os.environ.get('SMOKE_KIT')
+        if not kit:
+            self.skipTest('set SMOKE_KIT to verify canonical role clauses')
+        for profile, clauses in c.ROLE_CONTRACTS.items():
+            canonical = (Path(kit) / 'hermes/profiles' / profile / 'SOUL.md').read_text()
+            for clause in clauses:
+                self.assertIn(clause, canonical)
 
     def test_claude_valid_registration(self):
         self.claude()
