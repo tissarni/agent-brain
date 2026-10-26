@@ -832,19 +832,7 @@ for c in handoff-launch handoff-orchestrate brief-check; do
   if command -v "$c" >/dev/null 2>&1; then record_ok "$c on PATH"
   else record_bad "$c on PATH" "add this to $RC: $RC_BLOCK_LINE"; fi
 done
-bin_of() { if command -v "$1" >/dev/null 2>&1; then command -v "$1"; else echo "$HOME/.local/bin/$1"; fi; }
-EX_BRIEF=""
-for f in "$BRAIN"/02-projects/example/subprojects/example-version-flag/specs/*-brief-1-*; do
-  [ -f "$f" ] && { EX_BRIEF=$f; break; }
-done
-FIX_BY_HAND="re-run ./setup.sh, then run the failing command by hand to read its message"
-if [ -n "$EX_BRIEF" ]; then
-  if out=$("$(bin_of brief-check)" "$EX_BRIEF" 2>&1); then record_ok "brief-check on the example brief"
-  else record_bad "brief-check on the example brief" "$FIX_BY_HAND"; printf '%s\n' "$out" | tail -n 5 | sed 's/^/    /'; fi
-  if out=$("$(bin_of handoff-launch)" loop "$EX_BRIEF" --gate auto --backend "$DB" --dry-run 2>&1); then
-    record_ok "handoff-launch loop dry-run"
-  else record_bad "handoff-launch loop dry-run" "$FIX_BY_HAND"; printf '%s\n' "$out" | tail -n 5 | sed 's/^/    /'; fi
-fi
+
 
 if sh "$BRAIN/setup-check.sh" --brain "$BRAIN"; then
   record_ok "local setup acceptance (live handoff NOT TESTED)"

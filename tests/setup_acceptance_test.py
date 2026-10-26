@@ -228,6 +228,30 @@ class AcceptanceTests(unittest.TestCase):
             checker.launch_live(self.fixture, '/not/executed', 'claude', None, 1, self.env)
         self.assertEqual(target.read_text(), 'preserve me')
 
+    @unittest.skipUnless(os.environ.get('SMOKE_KIT'), 'set SMOKE_KIT for real pinned-launcher preflight')
+    def test_pinned_devin_dry_run_never_calls_real_backend(self):
+        kit = Path(os.environ['SMOKE_KIT'])
+        bins = self.root / 'devin-bin'
+        bins.mkdir()
+        marker = self.root / 'devin-called'
+        p = bins / 'devin'
+        p.write_text('#!/bin/sh\necho "$*" >> ' + str(marker) + '\necho "logged in"\n')
+        p.chmod(0o755)
+        for name, target in [('handoff-launch', 'handoff-launch.sh'), ('brief-check', 'brief-check.sh'), ('handoff-orchestrate', 'handoff-orchestrate.sh')]:
+            (bins / name).symlink_to(kit / target)
+        home = self.root / 'devin-home'
+        config = home / '.config/handoff'
+        config.mkdir(parents=True)
+        config.joinpath('config.env').write_text('VAULT=' + str(self.fixture['notes']) + '\nHANDOFF_DEFAULTS=02-projects/_templates/handoff-defaults.yml\nHANDOFF_PROJECTS=02-projects\n')
+        env = dict(self.env, HOME=str(home), PATH=str(bins) + os.pathsep + self.env['PATH'])
+        result = subprocess.run([sys.executable, str(ROOT / 'setup-check.py'), '--brain', str(self.fixture['notes']), '--backend', 'devin'], env=env, text=True, capture_output=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertFalse(marker.exists(), 'real Devin auth command was executed during free preflight')
+        result = subprocess.run([sys.executable, str(ROOT / 'setup-check.py'), '--brain', str(self.fixture['notes']), '--backend', 'devin', '--live', '--model', 'unsupported-canary-model'], env=env, text=True, capture_output=True)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn('FAIL: live handoff', result.stdout)
+        self.assertTrue(marker.exists(), 'explicit live path never reached installed backend fake')
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -214,22 +214,37 @@ def launch_live(f, launcher, backend, model, timeout, env):
     return verify_live(f, env)
 
 
+def write_backend_shim(f, backend, live=False):
+    shim = f['root'] / 'bin' / backend
+    if live:
+        cli = shutil.which(backend)
+        require(cli is not None, 'backend executable missing: ' + backend)
+        lines = ['#!/bin/sh', 'export HOME=' + shlex.quote(os.environ['HOME'])]
+        for key in ['XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'XDG_CACHE_HOME']:
+            lines.append('export ' + key + '=' + shlex.quote(os.environ[key]) if key in os.environ else 'unset ' + key)
+        lines.append('exec ' + shlex.quote(cli) + ' "$@"')
+    else:
+        # The pinned Devin launcher probes auth even during --dry-run. Satisfy
+        # only that parser prerequisite offline; this is NOT auth evidence.
+        lines = ['#!/bin/sh', 'if [ "$1 $2" = "auth status" ]; then echo "logged in (OFFLINE STUB: auth NOT TESTED)"; exit 0; fi',
+                 'echo "backend execution denied in free preflight" >&2', 'exit 126']
+    require(not shim.is_symlink(), 'backend shim replaced by symlink')
+    shim.write_text('\n'.join(lines) + '\n')
+    shim.chmod(0o700)
+
+
 def isolate_launcher_home(f, backend, env):
     """Kit hooks/config stay disposable; the actual CLI keeps its installed auth.
 
     This is working-directory isolation, NOT a security sandbox for an agent.
     """
     env = dict(env)
-    original_home = env['HOME']
+
     home = f['root'] / 'home'
     home.mkdir(mode=0o700)
     bins = f['root'] / 'bin'
     bins.mkdir()
-    cli = shutil.which(backend)
-    require(cli is not None, 'backend executable missing: ' + backend)
-    shim = bins / backend
-    shim.write_text('#!/bin/sh\nexport HOME=' + shlex.quote(original_home) + '\nexec ' + shlex.quote(cli) + ' "$@"\n')
-    shim.chmod(0o700)
+    write_backend_shim(f, backend)
     # The pinned launcher asks for a PR even for a local origin. Refuse forge calls
     # rather than allow a canary to open a PR. A resulting held run is a real FAIL.
     for name in ['gh', 'glab', 'curl', 'systemctl', 'launchctl', 'loginctl']:
@@ -242,7 +257,9 @@ def isolate_launcher_home(f, backend, env):
     # Avoid inherited executable overrides bypassing the backend shim.
     env.pop('CLAUDE_BIN', None)
     env.pop('HERMES_BIN', None)
+    env.pop('DEVIN_BIN', None)
     env.pop('CLAUDE_CONFIG_DIR', None)
+    env[{'claude': 'CLAUDE_BIN', 'hermes': 'HERMES_BIN', 'devin': 'DEVIN_BIN'}[backend]] = str(bins / backend)
     return env
 
 
@@ -311,13 +328,14 @@ def main(argv=None):
         def protocol_preflight():
             nonlocal launcher_env
             require(fixture is not None, 'no baseline fixture')
+            require(backend in ['claude', 'hermes', 'devin'], 'unsupported configured backend')
             launcher_env = isolate_launcher_home(fixture, backend, env)
             launcher_env.update(VAULT=str(fixture['notes']), HANDOFF_DEFAULTS='02-projects/_templates/handoff-defaults.yml', HANDOFF_PROJECTS='02-projects')
             output = run(['brief-check', str(fixture['brief'])], fixture['notes'], launcher_env)
             require(re.search(r'^RESULT 0 FAIL\b', output, re.M), 'brief-check did not report zero failures')
             output = run(['handoff-launch', 'loop', str(fixture['brief']), '--gate', 'auto', '--backend', backend, '--dry-run'], fixture['notes'], launcher_env)
             require('DRY RUN loop' in output, 'launcher did not confirm dry-run')
-            return 'brief-check and launcher dry-run passed on isolated fixture; no model/auth call'
+            return 'brief-check and launcher dry-run passed; backend calls blocked (Devin auth prerequisite stubbed, authentication NOT TESTED)'
 
         check('handoff protocol preflight', protocol_preflight)
         # Optional integrations are never sent to, started or enabled here.
@@ -342,6 +360,7 @@ def main(argv=None):
                 require(not any(r['status'] == 'FAIL' for r in results), 'local prerequisites failed')
                 launcher = shutil.which('handoff-launch')
                 require(launcher_env is not None, 'preflight did not initialize launcher')
+                write_backend_shim(fixture, backend, live=True)
                 sha = launch_live(fixture, launcher, backend, args.model, args.timeout, launcher_env)
                 return 'review/revise/run/close/debrief artifacts, closed state, diff, commit ' + sha + ' and fresh tests verified'
             check('live handoff', live)

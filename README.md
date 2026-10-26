@@ -122,7 +122,10 @@ through Homebrew when they are missing.
 
 The free checks verify brain configuration, executable discovery, a fresh local Git
 fixture and Python baseline tests, `brief-check`, and the real launcher's `--dry-run`.
-They never invoke a model or an auth/login command. A successful free run exits 0 but
+They block real backend execution. The pinned Devin launcher probes auth even during
+dry-run: the checker supplies an explicitly offline stub for that prerequisite, never
+the real auth command. This proves parser/config resolution, **not authentication**.
+A successful free run exits 0 but
 prints **live handoff: NOT TESTED**; this is not end-to-end PASS. Missing prerequisites
 or malformed configured integrations exit 1. Usage errors exit 2.
 
