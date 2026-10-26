@@ -142,7 +142,11 @@ is_gnu() { case "$("$1" --version 2>&1 || true)" in *GNU*) return 0 ;; *) return
 tool_ok() {
   case "$1" in
     bash) [ "${BASH_VERSINFO[0]}" -ge 4 ] ;;
-    coreutils) is_gnu sort ;;
+    # Ubuntu 26.04 defaults to uutils; reinstalling coreutils keeps that provider.
+    # Both providers support the coreutils flags used here; BSD/unknown tools do not.
+    coreutils) case "$(sort --version 2>&1 || true)" in
+      *GNU*|*'uutils coreutils'*) return 0 ;; *) return 1 ;;
+    esac ;;
     findutils) is_gnu find ;;
     sed) is_gnu sed ;;
     grep) is_gnu grep ;;

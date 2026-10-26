@@ -6,7 +6,7 @@
 
 CASES=(setup-runs commands-resolve seeds-filled demo-repo git-config remote-template
   example-brief-check loop-dry-run idempotent nothing-installed bad-flag extras bad-time
-  ignores-temp-files env-first-wins hermes-hooks)
+  ignores-temp-files env-first-wins hermes-hooks uutils-coreutils unknown-coreutils)
 
 . "$(dirname "$0")/sandbox.sh"
 
@@ -174,6 +174,27 @@ case_env_first_wins() {
   /usr/bin/grep -q -e './setup-check.sh --live --backend claude --keep$' "$TMP/setup4.log" && pass env-first-wins || fail env-first-wins "backend is not claude: $(tail_log "$TMP/setup4.log")"
 }
 
+# Exercise dependency detection through the real unattended setup entry point.
+# Only the provider banner is simulated; sorting still uses the host executable.
+case_coreutils_provider() {
+  local provider=$1 expected=$2 rc real_sort
+  real_sort=$(command -v sort)
+  printf '#!/bin/sh\nif [ "${1:-}" = --version ]; then printf "%%s\\n" "%s"; exit 0; fi\nexec "%s" "$@"\n' \
+    "$provider" "$real_sort" >"$TMP/fakes/sort"
+  chmod +x "$TMP/fakes/sort"
+  sandbox "$BRAIN/setup.sh" "${SETUP_ARGS[@]}" --kit "$KIT" >"$TMP/provider.log" 2>&1
+  rc=$?
+  rm "$TMP/fakes/sort"
+  if [ "$expected" = accept ]; then
+    [ "$rc" -eq 0 ] || { fail uutils-coreutils "exit $rc: $(tail_log "$TMP/provider.log")"; return; }
+    ! /usr/bin/grep -q 'dependency coreutils\|missing:.*coreutils' "$TMP/provider.log" || { fail uutils-coreutils "compatible provider rejected"; return; }
+    pass uutils-coreutils
+  else
+    [ "$rc" -ne 0 ] && /usr/bin/grep -q 'NOT READY: dependency coreutils' "$TMP/provider.log" \
+      && pass unknown-coreutils || fail unknown-coreutils "unknown provider was not refused"
+  fi
+}
+
 case_setup_runs
 case_commands_resolve
 case_seeds_filled
@@ -190,6 +211,8 @@ case_bad_time
 case_env_first_wins
 case_ignores_temp_files
 case_hermes_hooks
+case_coreutils_provider 'sort (uutils coreutils) 0.10.0' accept
+case_coreutils_provider 'sort (unknown implementation) 1.0' refuse
 
 echo "$passed passed, $failed failed"
 [ "$failed" -eq 0 ]
