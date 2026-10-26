@@ -108,8 +108,8 @@ case_extras() {
   [ "$(stat -c %a "$nt" 2>/dev/null || stat -f %Lp "$nt")" = 600 ] || { fail extras "notify.env is not mode 600"; return; }
   /usr/bin/grep -q '^TELEGRAM_BOT_TOKEN=.' "$nt" && /usr/bin/grep -q '^TELEGRAM_CHAT_ID=.' "$nt" || { fail extras "notify.env lacks a key"; return; }
   /usr/bin/grep -q -x 'NOTIFY=telegram' "$BRAIN/brain.env" || { fail extras "brain.env lacks NOTIFY=telegram"; return; }
-  ! /usr/bin/grep -q -F 'fake-token-123' "$TMP/log/curl.log" || { fail extras "curl.log holds the token"; return; }
-  [ -s "$TMP/log/curl.log" ] || { fail extras "no test message sent"; return; }
+  [ ! -s "$TMP/log/curl.log" ] || { fail extras "unattended setup sent an unsolicited test message"; return; }
+  /usr/bin/grep -q 'NOT TESTED: telegram' "$TMP/setup3.log" || { fail extras "Telegram delivery incorrectly marked tested"; return; }
   if [ "$(uname -s)" = Darwin ]; then
     /usr/bin/grep -q 'bootstrap' "$TMP/log/launchctl.log" || { fail extras "launchctl saw no bootstrap"; return; }
   else
@@ -171,7 +171,7 @@ case_env_first_wins() {
   rc=$?
   /usr/bin/grep -v -x 'DEFAULT_BACKEND=devin' "$BRAIN/brain.env" >"$TMP/env" && cat "$TMP/env" >"$BRAIN/brain.env"
   [ "$rc" -eq 0 ] || { fail env-first-wins "exit $rc: $(tail_log "$TMP/setup4.log")"; return; }
-  /usr/bin/grep -q -e '--gate auto --backend claude$' "$TMP/setup4.log" && pass env-first-wins || fail env-first-wins "backend is not claude: $(tail_log "$TMP/setup4.log")"
+  /usr/bin/grep -q -e './setup-check.sh --live --backend claude --keep$' "$TMP/setup4.log" && pass env-first-wins || fail env-first-wins "backend is not claude: $(tail_log "$TMP/setup4.log")"
 }
 
 case_setup_runs

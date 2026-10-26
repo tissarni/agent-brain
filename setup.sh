@@ -749,7 +749,7 @@ if want "$TELEGRAM" "Set up Telegram notifications?"; then
   fi
   if tg_ready; then
     env_set NOTIFY telegram
-    if confirm "Send one test message?"; then
+    if [ "$YES" = 0 ] && confirm "Send one test message?"; then
       # The token goes to curl on stdin, never on its command line.
       if printf 'url = "https://api.telegram.org/bot%s/sendMessage"\n' "$(tg_get TELEGRAM_BOT_TOKEN)" \
            | curl -fsS -m 20 -X POST -K - --data-urlencode "chat_id=$(tg_get TELEGRAM_CHAT_ID)" \
@@ -846,6 +846,12 @@ if [ -n "$EX_BRIEF" ]; then
   else record_bad "handoff-launch loop dry-run" "$FIX_BY_HAND"; printf '%s\n' "$out" | tail -n 5 | sed 's/^/    /'; fi
 fi
 
+if sh "$BRAIN/setup-check.sh" --brain "$BRAIN"; then
+  record_ok "local setup acceptance (live handoff NOT TESTED)"
+else
+  record_bad "local setup acceptance" "run ./setup-check.sh; live model/auth is separate and opt-in"
+fi
+
 echo
 BAD=0
 while IFS="$TAB" read -r kind label fix; do
@@ -855,9 +861,10 @@ while IFS="$TAB" read -r kind label fix; do
 done <<EOF
 $RES
 EOF
-if [ -n "$EX_BRIEF" ]; then
-  echo
-  echo "First command to try:"
-  echo "  handoff-launch loop $EX_BRIEF --gate auto --backend $DB"
-fi
+echo
+echo "First command to try (free, no model requests):"
+echo "  ./setup-check.sh"
+echo "Optional end-to-end canary (uses your model quota; disposable repositories):"
+echo "  ./setup-check.sh --live --backend $DB --keep"
+echo "Live handoff and optional integration delivery are NOT TESTED by setup."
 [ "$BAD" = 0 ]
