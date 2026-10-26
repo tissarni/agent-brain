@@ -190,8 +190,10 @@ case_coreutils_provider() {
     ! /usr/bin/grep -q 'dependency coreutils\|missing:.*coreutils' "$TMP/provider.log" || { fail uutils-coreutils "compatible provider rejected"; return; }
     pass uutils-coreutils
   else
-    [ "$rc" -ne 0 ] && /usr/bin/grep -q 'NOT READY: dependency coreutils' "$TMP/provider.log" \
-      && pass unknown-coreutils || fail unknown-coreutils "unknown provider was not refused"
+    # macOS may recover by prepending already-installed Homebrew GNU tools.
+    # Assert initial refusal, not failure after a legitimate PATH repair.
+    /usr/bin/grep -q 'missing:.*coreutils' "$TMP/provider.log" \
+      && pass unknown-coreutils || fail unknown-coreutils "unknown provider was not identified as missing: $(tail_log "$TMP/provider.log")"
   fi
 }
 
