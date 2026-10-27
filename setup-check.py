@@ -172,7 +172,10 @@ def verify_live(f, env):
     field(fm, 'handoff', 'closed')
     field(fm, 'repo', str(repo))
     field(fm, 'branch', 'feat/version-flag')
-    field(fm, 'revision', REVISION)
+    revisions = re.findall(r'^revision:[ \t]*(\S+)[ \t]*$', fm, re.M)
+    require(len(revisions) == 1, 'invalid or ambiguous final revision')
+    final_revision = revisions[0]
+    field(fm, 'revision', final_revision)
     review = plain_file(brief.with_suffix('.review.md'))
     reviewed = block(review, 'HANDOFF REVIEW')
     field(reviewed, 'brief-revision', REVISION)
@@ -180,8 +183,13 @@ def verify_live(f, env):
     revise = re.split(r'^## Revise outcome\b[^\n]*$', review, flags=re.M)
     require(len(revise) >= 2, 'missing revise outcome')
     field(revise[-1], 'gate', 'clean')
+    if final_revision != REVISION:
+        heading = re.findall(r'^## Revise outcome\b[^\n]*$', review, re.M)[-1]
+        require(re.search(r'(?:^|[ \t])' + re.escape(REVISION) + r'[ \t]*(?:→|->)[ \t]*' + re.escape(final_revision) + r'(?:[ \t]|$)', heading),
+                'final revision has no matching recorded transition')
     report = plain_file(brief.with_suffix('.report.md'))
     completion = block(report, 'COMPLETION REPORT')
+    field(completion, 'brief-revision', final_revision)
     field(completion, 'outcome', 'COMPLETE')
     require(re.search(r'^audit:.*\b0 refuted, 0 unconfirmed[ \t]*$', completion, re.M), 'missing clean completion audit')
     nd = re.findall(r'^--- NOT DONE ---\n(.*?)(?=^--- |\Z)', completion, re.M | re.S)
@@ -189,6 +197,7 @@ def verify_live(f, env):
     require(re.search(r'^## Debrief outcome\b', report, re.M), 'missing debrief outcome')
     close = block(plain_file(brief.with_suffix('.close.md')), 'CLOSE AUDIT')
     field(close, 'VERDICT', 'PASS')
+    field(close, 'REPORT_REVISION', final_revision)
     done = plain_file(brief.with_suffix('.done-when.md'))
     require(done.startswith('# done-when · '), 'missing structured done-when results')
     for item, command in [(1, 'python3 -m unittest -q'), (2, 'python3 hello.py --version')]:
