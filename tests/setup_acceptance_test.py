@@ -35,13 +35,46 @@ class AcceptanceTests(unittest.TestCase):
         b = f['brief']
         b.write_text(b.read_text().replace('handoff: draft', 'handoff: closed'))
         b.with_suffix('.review.md').write_text('=== HANDOFF REVIEW ===\nbrief-revision: 2026-10-10-r1\nverdict: RUN\n=== END HANDOFF REVIEW ===\n## Revise outcome\ngate: clean\n')
-        b.with_suffix('.report.md').write_text('=== COMPLETION REPORT ===\noutcome: COMPLETE\naudit: 0 refuted, 0 unconfirmed\n--- NOT DONE ---\n- none\n=== END COMPLETION REPORT ===\n## Debrief outcome\nClosed.\n')
-        b.with_suffix('.close.md').write_text('=== CLOSE AUDIT ===\nVERDICT: PASS\n=== END CLOSE AUDIT ===\n')
+        b.with_suffix('.report.md').write_text('=== COMPLETION REPORT ===\nbrief-revision: 2026-10-10-r1\noutcome: COMPLETE\naudit: 0 refuted, 0 unconfirmed\n--- NOT DONE ---\n- none\n=== END COMPLETION REPORT ===\n## Debrief outcome\nClosed.\n')
+        b.with_suffix('.close.md').write_text('=== CLOSE AUDIT ===\nVERDICT: PASS\nREPORT_REVISION: 2026-10-10-r1\n=== END CLOSE AUDIT ===\n')
         b.with_suffix('.done-when.md').write_text('# done-when · canary\n§4.1 · line 50 · exit 0 · 1s · sha256 abc\n  $ python3 -m unittest -q\n§4.2 · line 51 · exit 0 · 1s · sha256 def\n  $ python3 hello.py --version\n')
 
     def test_complete_requires_git_and_protocol_and_real_tests(self):
         self.complete()
         checker.verify_live(self.fixture, self.env)
+
+    def revised(self):
+        self.complete()
+        b = self.fixture['brief']
+        final = '2026-10-27-r2'
+        b.write_text(b.read_text().replace('revision: ' + checker.REVISION, 'revision: ' + final))
+        p = b.with_suffix('.review.md')
+        p.write_text(p.read_text().replace('## Revise outcome', '## Revise outcome — ' + checker.REVISION + ' → ' + final))
+        for suffix in ['.report.md', '.close.md']:
+            p = b.with_suffix(suffix)
+            p.write_text(p.read_text().replace(checker.REVISION, final))
+
+    def test_authorized_revision_transition_is_accepted(self):
+        self.revised()
+        checker.verify_live(self.fixture, self.env)
+
+    def test_revised_artifacts_must_bind_to_final_revision(self):
+        self.revised()
+        b = self.fixture['brief']
+        for suffix in ['.report.md', '.close.md']:
+            p = b.with_suffix(suffix)
+            original = p.read_text()
+            p.write_text(original.replace('2026-10-27-r2', checker.REVISION))
+            with self.subTest(suffix=suffix), self.assertRaises(checker.CheckError):
+                checker.verify_live(self.fixture, self.env)
+            p.write_text(original)
+
+    def test_revision_change_requires_recorded_transition(self):
+        self.revised()
+        p = self.fixture['brief'].with_suffix('.review.md')
+        p.write_text(p.read_text().replace(' → 2026-10-27-r2', ' → wrong-revision'))
+        with self.assertRaises(checker.CheckError):
+            checker.verify_live(self.fixture, self.env)
 
     def test_report_alone_is_not_pass(self):
         self.complete()
