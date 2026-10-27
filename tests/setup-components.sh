@@ -45,23 +45,6 @@ sandbox "$BRAIN/setup.sh" --yes --journal y --journal-daily 21:17 >"$TMP/journal
 sandbox "$BRAIN/setup.sh" --yes >"$TMP/journal-keep.log" 2>&1
 if [ $? = 0 ] && ! grep -q 'enable --now' "$TMP/log/systemctl.log" && ! grep -q 'bootstrap' "$TMP/log/launchctl.log" && grep -q 'journal timers verified' "$TMP/journal-keep.log"; then pass journal-resume; else
   cat "$TMP/journal-keep.log"
-  sandbox python3 -I - "$BRAIN" <<'PY'
-import runpy, sys
-from pathlib import Path
-brain = Path(sys.argv[1])
-module = runpy.run_path(str(brain / 'setup-state.py'))
-def trace(frame, event, arg):
-    if frame.f_code.co_name == 'journal_ready' and event == 'return' and arg is False:
-        print('fixture journal rejection line:', frame.f_lineno)
-        for key in ['brain', 'home', 'path', 'expected', 'daily', 'weekly']:
-            if key in frame.f_locals: print(key, repr(frame.f_locals[key]))
-        p = frame.f_locals.get('path')
-        if p and p.exists(): print('fixture plist:', p.read_text())
-    return trace
-sys.settrace(trace)
-try: print('fixture journal result:', module['journal_ready'](brain.resolve(), Path.home(), '21:17', '06:00'))
-except Exception as exc: print('fixture journal exception:', type(exc).__name__, str(exc))
-PY
   fail journal-resume 'valid timers reinstalled'
 fi
 if [ "$(uname -s)" = Darwin ]; then
@@ -74,9 +57,15 @@ if [ $? = 0 ] && ! grep -q 'journal timers verified' "$TMP/journal-repair.log"; 
 # Saved consent is not proof of working config, units or role profiles.
 printf 'VAULT=/missing-fixture\nHANDOFF_DEFAULTS=wrong\nHANDOFF_PROJECTS=wrong\n' >"$HOME_DIR/.config/handoff/config.env"
 sandbox "$BRAIN/setup.sh" --yes >"$TMP/config-repair.log" 2>&1
-if [ $? = 0 ] && grep -qx "VAULT=$BRAIN" "$HOME_DIR/.config/handoff/config.env"; then pass repair-kit-config; else
-  printf 'fixture brain path: %s\n' "$BRAIN"
-  grep '^VAULT=' "$HOME_DIR/.config/handoff/config.env"
+repair_rc=$?
+sandbox python3 -I - "$BRAIN" "$HOME_DIR/.config/handoff/config.env" <<'PY'
+from pathlib import Path
+import sys
+values = dict(line.split('=', 1) for line in Path(sys.argv[2]).read_text().splitlines() if '=' in line)
+assert Path(values['VAULT']).resolve() == Path(sys.argv[1]).resolve()
+PY
+path_rc=$?
+if [ "$repair_rc" = 0 ] && [ "$path_rc" = 0 ]; then pass repair-kit-config; else
   cat "$TMP/config-repair.log"
   fail repair-kit-config 'stale config not reconciled'
 fi

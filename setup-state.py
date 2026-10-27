@@ -162,6 +162,10 @@ def update_identity(brain, arguments):
 def main():
     mode, kit_arg, brain_arg = sys.argv[1:4]
     kit, brain, home = Path(kit_arg).resolve(), Path(brain_arg).resolve(), Path.home()
+    # The journal installer hashes its shell path spelling into launchd labels.
+    # Resolving /var to /private/var here selects a different job on macOS.
+    if mode in ('journal', 'journal-times'):
+        brain = Path(brain_arg).absolute()
     if mode == 'identity':
         return update_identity(brain, sys.argv[4:])
     if mode == 'kit':

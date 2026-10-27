@@ -41,3 +41,25 @@ class IdentityTests(unittest.TestCase):
         result, original, changed = self.update('Original — Engineer.\nMy custom languages.\n')
         self.assertEqual(result, 1)
         self.assertEqual(changed, original)
+
+
+class PathBindingTests(unittest.TestCase):
+    def check_journal_path(self, mode, function, result, expected):
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            actual = root / 'actual'
+            actual.mkdir()
+            alias = root / 'alias'
+            alias.symlink_to(actual, target_is_directory=True)
+            argv = ['setup-state.py', mode, str(root), str(alias), '21:17', '06:00']
+            with mock.patch.object(state.sys, 'argv', argv), mock.patch.object(state, function, return_value=result) as probe:
+                self.assertEqual(state.main(), expected)
+                # launchd labels hash the installer spelling, not the realpath.
+                self.assertEqual(probe.call_args.args[0], alias)
+
+    def test_journal_keeps_installer_path_spelling(self):
+        self.check_journal_path('journal', 'journal_ready', True, 0)
+
+    def test_journal_times_keeps_installer_path_spelling(self):
+        self.check_journal_path('journal-times', 'journal_times', 0, 0)
