@@ -73,6 +73,10 @@ done
 for n in sudo apt-get dnf brew gh glab; do
   printf '#!/usr/bin/env bash\necho "%s $*" >>"%s/log/%s.log"\nexit 1\n' "$n" "$TMP" "$n" >"$TMP/fakes/$n"
 done
+# Runtime bootstrap legitimately queries Homebrew's prefix before checking tools.
+# Permit only that read; installation attempts stay refused and separately logged.
+printf '#!/usr/bin/env bash\nif [ "${1:-}" = --prefix ]; then printf "%%s\\n" "%s"; exit 0; fi\necho "brew $*" >>"%s/log/brew.log"\nexit 1\n' \
+  "${hb:-$TMP/homebrew}" "$TMP" >"$TMP/fakes/brew"
 chmod +x "$TMP/fakes"/*
 
 # fake_hermes: a hermes that answers only `config path|get|set` against $HOME/.hermes/config.json
