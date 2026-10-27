@@ -3,14 +3,15 @@
 #
 #   ./setup.sh [--yes] [--name <n>] [--role <r>] [--languages <l>] [--principles <p>]
 #              [--code-root <dir>] [--backends <claude,hermes,devin>] [--kit <dir>]
-#              [--remote <name>|none] [--linger y|n] [--telegram y|n] [--journal y|n]
+#              [--remote <name>|none] [--linger y|n] [--telegram y|n] [--telegram-test] [--journal y|n]
 #              [--journal-daily HH:MM] [--journal-weekly HH:MM] [--hermes-hooks y|n] [-h|--help]
 #   ./setup.sh --update [--yes] [--kit <dir>] [--hermes-hooks y|n]
 #       merge the template's latest, re-run the idempotent steps
 #   ./setup.sh --remove-example [--yes]           delete the example project and its demo repository
 #
 # The brain is the directory this script sits in. Safe to run again: nothing already
-# right is changed, and no file of yours is ever overwritten.
+# right is changed. Personal files are kept; explicit identity/settings flags update
+# only their corresponding fields. Saved preferences never replace component checks.
 # Exit 0: ready. 1: a final check failed (each failure is printed with its fix).
 # 2: bad usage, no terminal without --yes, or an unsupported platform.
 #
@@ -20,7 +21,7 @@ set -euo pipefail
 
 USAGE="usage: ./setup.sh [--yes] [--name <n>] [--role <r>] [--languages <l>] [--principles <p>]
                   [--code-root <dir>] [--backends <claude,hermes,devin>] [--kit <dir>]
-                  [--remote <name>|none] [--linger y|n] [--telegram y|n] [--journal y|n]
+                  [--remote <name>|none] [--linger y|n] [--telegram y|n] [--telegram-test] [--journal y|n]
                   [--journal-daily HH:MM] [--journal-weekly HH:MM] [--hermes-hooks y|n] [-h|--help]
        ./setup.sh --update [--yes] [--kit <dir>] [--hermes-hooks y|n]
        ./setup.sh --remove-example [--yes]"
@@ -31,7 +32,7 @@ NL='
 '
 
 YES=0 NAME="" ROLE="" LANGUAGES="" PRINCIPLES="" CODE_ROOT_RAW="" BACKENDS="" KIT_ARG="" REMOTE=""
-LINGER="" TELEGRAM="" JOURNAL="" J_DAILY=23:30 J_WEEKLY=06:00 HERMES_HOOKS=""
+LINGER="" TELEGRAM="" JOURNAL="" J_DAILY="" J_WEEKLY="" HERMES_HOOKS="" TELEGRAM_TEST=0
 MODE=setup
 HAVE_NAME=0 HAVE_ROLE=0 HAVE_LANGUAGES=0 HAVE_PRINCIPLES=0 HAVE_CODE_ROOT=0 HAVE_BACKENDS=0 HAVE_REMOTE=0
 
@@ -53,6 +54,7 @@ while [ $# -gt 0 ]; do
     --remote) need_val $#; REMOTE=$2; HAVE_REMOTE=1; shift 2 ;;
     --linger) need_val $#; LINGER=$2; shift 2 ;;
     --telegram) need_val $#; TELEGRAM=$2; shift 2 ;;
+    --telegram-test) TELEGRAM_TEST=1; shift ;;
     --journal) need_val $#; JOURNAL=$2; shift 2 ;;
     --journal-daily) need_val $#; J_DAILY=$2; shift 2 ;;
     --journal-weekly) need_val $#; J_WEEKLY=$2; shift 2 ;;
@@ -73,10 +75,15 @@ if [ "$HAVE_BACKENDS" = 1 ]; then
     case "$b" in claude|hermes|devin) ;; *) usage_exit ;; esac
   done
 fi
+if [ "$TELEGRAM_TEST" = 1 ]; then
+  [ "$MODE" = setup ] && [ "$TELEGRAM" != n ] || usage_exit
+  TELEGRAM=y
+fi
 for v in "$LINGER" "$TELEGRAM" "$JOURNAL" "$HERMES_HOOKS"; do
   case "$v" in ""|y|n) ;; *) usage_exit ;; esac
 done
 for v in "$J_DAILY" "$J_WEEKLY"; do
+  [ -n "$v" ] || continue
   printf '%s' "$v" | grep -Eq '^([01][0-9]|2[0-3]):[0-5][0-9]$' || usage_exit
 done
 if [ -n "$KIT_ARG" ]; then
@@ -126,10 +133,7 @@ if [ "$YES" = 0 ] && ! ( exec </dev/tty ) 2>/dev/null; then
   echo "no terminal: pass --yes" >&2
   exit 2
 fi
-step "1. Platform: $PLATFORM"
-
 # ---- Step 2: dependencies ---------------------------------------------------------
-step "2. Dependencies"
 SUDO=""
 [ "$(id -u)" = 0 ] || SUDO=sudo
 PM=""
@@ -177,6 +181,29 @@ gnubin_path() {
   export PATH
 }
 
+# Activate already-installed Homebrew tools before checking dependencies. The
+# bootstrap is Bash 3.2 compatible; restarting retains the original arguments.
+activate_brew() {
+  [ "$PLATFORM" = macos ] || return 0
+  if ! command -v brew >/dev/null 2>&1; then
+    for _hb in /opt/homebrew /usr/local; do
+      if [ -x "$_hb/bin/brew" ]; then PATH="$_hb/bin:$PATH"; export PATH; break; fi
+    done
+  fi
+  if command -v brew >/dev/null 2>&1; then
+    gnubin_path
+    if [ "${BASH_VERSINFO[0]}" -lt 4 ] && [ -z "${AGENT_BRAIN_REEXEC:-}" ] \
+       && [ -x "$(brew --prefix)/bin/bash" ]; then
+      export AGENT_BRAIN_REEXEC=1
+      exec "$(brew --prefix)/bin/bash" "$0" "${ORIGINAL_ARGS[@]}"
+    fi
+  fi
+}
+ORIGINAL_ARGS=("$@")
+activate_brew
+step "1. Platform: $PLATFORM"
+step "2. Dependencies"
+
 REQUIRED="git bash python3 node curl coreutils findutils sed grep pgrep"
 # flock and setsid: Homebrew's util-linux is keg-only, and on macOS every caller
 # falls back (python3, a lock directory), so only Linux and WSL2 require them.
@@ -203,6 +230,9 @@ if [ -n "$MISSING" ]; then
         done
       fi
     fi
+    activate_brew
+    MISSING=""
+    for t in $REQUIRED; do tool_ok "$t" || MISSING="$MISSING $t"; done
     if [ "$PM" = brew ] && ! command -v brew >/dev/null 2>&1; then
       for t in $MISSING; do record_bad "dependency $t" "install Homebrew (https://brew.sh), then ./setup.sh"; done
     else
@@ -214,17 +244,19 @@ if [ -n "$MISSING" ]; then
       done
       PKGS=${PKGS# }
       CMD=$(install_cmd $PKGS)
+      if [ -n "$PKGS" ]; then
       say "install command: $CMD"
       if confirm "run it?"; then
         say "+ $CMD"
         $CMD || say "install command failed"
-        [ "$PM" = brew ] && gnubin_path
+        activate_brew
       else
         say "declined"
       fi
       for t in $MISSING; do
         tool_ok "$t" || record_bad "dependency $t" "$CMD"
       done
+      fi
     fi
   fi
 fi
@@ -256,6 +288,20 @@ env_set() { # env_set <key> <value>: rewrite that one line, keep the rest
   cat "$tmp" >"$ENV_FILE"
   rm -f "$tmp"
 }
+# Preferences are data, never shell code. No completed marker skips verification.
+saved_choice() {
+  local value; value=$(env_get "$1" "")
+  case "$value" in y|n) printf '%s' "$value" ;; esac
+}
+OLD_TIMES=$(python3 -I "$BRAIN/setup-state.py" journal-times "" "$BRAIN" 2>/dev/null || true)
+[ -n "$J_DAILY" ] || J_DAILY=$(env_get SETUP_JOURNAL_DAILY "${OLD_TIMES%% *}")
+[ -n "$J_WEEKLY" ] || J_WEEKLY=$(env_get SETUP_JOURNAL_WEEKLY "${OLD_TIMES##* }")
+J_DAILY=${J_DAILY:-23:30}; J_WEEKLY=${J_WEEKLY:-06:00}
+if [ -z "$JOURNAL" ] && [ -z "$(saved_choice SETUP_JOURNAL)" ] && [ -n "$OLD_TIMES" ]; then JOURNAL=y; fi
+for v in "$J_DAILY" "$J_WEEKLY"; do
+  printf '%s' "$v" | grep -Eq '^([01][0-9]|2[0-3]):[0-5][0-9]$' || usage_exit
+done
+personalized() { [ -f "$1" ] && ! grep -q -E '@(NAME|ROLE|LANGUAGES|PRINCIPLES)@' "$1"; }
 # ---- Step 3: five questions -------------------------------------------------------
 step "3. About you"
 if [ "$MODE" != setup ]; then
@@ -265,17 +311,24 @@ if [ "$MODE" != setup ]; then
   DEMO="$CODE_ROOT_X/agent-brain-demo"
   say "skipped ($MODE)"
 else
-  if [ "$HAVE_NAME" = 0 ]; then
+  if personalized "$BRAIN/AGENTS.local.md"; then
+      say "kept personalized identity (no interview)"
+      IDENTITY_READY=1
+  else IDENTITY_READY=0; fi
+  if [ "$HAVE_NAME" = 0 ] && [ "$IDENTITY_READY" = 0 ]; then
     default_name=$(git config user.name 2>/dev/null || true)
     NAME=$(ask "Your name" "${default_name:-${USER:-me}}")
   fi
-  [ "$HAVE_ROLE" = 1 ] || ROLE=$(ask "Your role" "software engineer")
-  if [ "$HAVE_LANGUAGES" = 0 ]; then
+  if [ "$HAVE_ROLE" = 0 ] && [ "$IDENTITY_READY" = 0 ]; then ROLE=$(ask "Your role" "software engineer"); fi
+  if [ "$HAVE_LANGUAGES" = 0 ] && [ "$IDENTITY_READY" = 0 ]; then
     if [ "$YES" = 1 ]; then LANGUAGES=""; else LANGUAGES=$(ask "Working languages (empty for none)" ""); fi
   fi
   [ -n "$LANGUAGES" ] || LANGUAGES="none yet"
-  [ "$HAVE_PRINCIPLES" = 1 ] || PRINCIPLES=$(ask "Principles" "TDD, SOLID, YAGNI, KISS, DRY")
-  [ "$HAVE_CODE_ROOT" = 1 ] || CODE_ROOT_RAW=$(ask "Root directory of your code repos" "~/projects")
+  if [ "$HAVE_PRINCIPLES" = 0 ] && [ "$IDENTITY_READY" = 0 ]; then PRINCIPLES=$(ask "Principles" "TDD, SOLID, YAGNI, KISS, DRY"); fi
+  if [ "$HAVE_CODE_ROOT" = 0 ]; then
+    CODE_ROOT_RAW=$(env_get CODE_ROOT "")
+    [ -n "$CODE_ROOT_RAW" ] || CODE_ROOT_RAW=$(ask "Root directory of your code repos" "~/projects")
+  fi
   [ -n "$CODE_ROOT_RAW" ] || CODE_ROOT_RAW="~/projects"
   CODE_ROOT_X=$(expand_home "$CODE_ROOT_RAW")
   CODE_ROOT_X=${CODE_ROOT_X%/}
@@ -393,7 +446,12 @@ SEEDS=$(cd "$BRAIN/.seed" && find . -type f "${SEED_SKIP[@]}" | sed 's|^\./||' |
 while IFS= read -r rel; do
   [ -n "$rel" ] || continue
   dest="$BRAIN/$rel"
-  if [ -e "$dest" ]; then say "kept $rel"; continue; fi
+  if [ -e "$dest" ]; then
+    if [ "$MODE" = setup ] && [ "$rel" = AGENTS.local.md ] && ! personalized "$dest"; then
+      fill_placeholders "$dest"
+    fi
+    say "kept $rel"; continue
+  fi
   mkdir -p "$(dirname "$dest")"
   cp "$BRAIN/.seed/$rel" "$dest"
   COPIED="$COPIED$rel$NL"
@@ -409,7 +467,13 @@ $SEEDS
 EOF
 seed_copied() { printf '%s' "$COPIED" | grep -qx -F -- "$1"; }
 
-if [ "$MODE" = setup ] && seed_copied brain.env; then env_set CODE_ROOT "$CODE_ROOT_RAW"; fi
+if [ "$MODE" = setup ] && [ "${IDENTITY_READY:-0}" = 1 ] \
+   && [ "$HAVE_NAME$HAVE_ROLE$HAVE_LANGUAGES$HAVE_PRINCIPLES" != 0000 ]; then
+  python3 -I "$BRAIN/setup-state.py" identity "" "$BRAIN" \
+    "$HAVE_NAME" "$NAME" "$HAVE_ROLE" "$ROLE" "$HAVE_LANGUAGES" "$LANGUAGES" "$HAVE_PRINCIPLES" "$PRINCIPLES" \
+    || record_bad "identity override" "custom identity layout: edit AGENTS.local.md by hand"
+fi
+if [ "$MODE" = setup ] && { seed_copied brain.env || [ "$HAVE_CODE_ROOT" = 1 ]; }; then env_set CODE_ROOT "$CODE_ROOT_RAW"; fi
 
 for d in 00-inbox 01-daily 03-knowledge 05-weekly; do
   if [ ! -d "$BRAIN/$d" ]; then mkdir -p "$BRAIN/$d"; : >"$BRAIN/$d/.gitkeep"; say "created $d/"; fi
@@ -439,16 +503,21 @@ fi
 step "5. Git"
 git -C "$BRAIN" config core.hooksPath .githooks
 say "core.hooksPath = .githooks"
-if git -C "$BRAIN" remote get-url origin >/dev/null 2>&1 && ! git -C "$BRAIN" remote get-url template >/dev/null 2>&1; then
+if [ "$(git -C "$BRAIN" remote get-url origin 2>/dev/null || true)" = "https://github.com/tissarni/agent-brain.git" ] \
+   && ! git -C "$BRAIN" remote get-url template >/dev/null 2>&1; then
   git -C "$BRAIN" remote rename origin template >/dev/null 2>&1
   git -C "$BRAIN" remote set-url --push template DISABLED
   say "origin renamed to template; its push URL is DISABLED"
 fi
 if [ "$MODE" = update ] && [ "$HAVE_REMOTE" = 0 ]; then REMOTE=none; HAVE_REMOTE=1; fi
 if [ "$HAVE_REMOTE" = 0 ]; then
-  if [ "$YES" = 1 ]; then REMOTE=none; else REMOTE=$(ask "Private GitHub repo to create for this brain (name, or none)" "none"); fi
+  if git -C "$BRAIN" remote get-url origin >/dev/null 2>&1; then REMOTE=none
+  elif [ "$(env_get SETUP_REMOTE "")" = none ]; then REMOTE=none
+  elif [ "$YES" = 1 ]; then REMOTE=none
+  else REMOTE=$(ask "Private GitHub repo to create for this brain (name, or none)" "none"); fi
 fi
 [ -n "$REMOTE" ] || REMOTE=none
+[ "$REMOTE" != none ] || env_set SETUP_REMOTE none
 if [ "$REMOTE" != none ]; then
   if git -C "$BRAIN" remote get-url origin >/dev/null 2>&1; then
     say "origin already exists: not creating $REMOTE"
@@ -480,6 +549,17 @@ KIT_URL=$(pin_get HANDOFF_KIT_URL)
 KIT_TAG=$(pin_get HANDOFF_KIT_TAG)
 KIT_OK=1
 KIT_SKIP=0
+KIT_CUSTOM=0
+[ -z "$KIT_ARG" ] || KIT_CUSTOM=1
+if [ -z "$KIT_ARG" ]; then
+  KIT_ARG=$(env_get SETUP_KIT "")
+  [ -z "$KIT_ARG" ] || KIT_CUSTOM=1
+  if [ -n "$KIT_ARG" ] && [ ! -f "$KIT_ARG/install.sh" ]; then
+    say "saved kit is missing: $KIT_ARG (will repair the default installation)"
+    KIT_ARG=""; KIT_CUSTOM=0
+    env_set SETUP_KIT ""
+  fi
+fi
 if [ -n "$KIT_ARG" ]; then
   KIT=$KIT_ARG
   say "using kit $KIT (HEAD untouched)"
@@ -493,17 +573,28 @@ else
     KIT_SKIP=1
     say "WARNING: ~/.local/bin/brief-check resolves to $BC_REAL, outside $KIT: the kit is left alone (pass --kit <dir> to reinstall it)"
   elif [ -d "$KIT/.git" ]; then
-    say "updating $KIT to $KIT_TAG"
-    git -C "$KIT" fetch -q --tags origin && git -C "$KIT" checkout -q --detach "$KIT_TAG" || KIT_OK=0
+    if [ "$(git -C "$KIT" rev-parse HEAD)" = "$(git -C "$KIT" rev-parse "$KIT_TAG^{commit}" 2>/dev/null || true)" ]; then
+      say "kit already at $KIT_TAG"
+    elif [ -n "$(git -C "$KIT" status --porcelain)" ]; then
+      say "kit has local changes: not updating it"
+      KIT_OK=0
+    else
+      say "updating $KIT to $KIT_TAG"
+      git -C "$KIT" fetch -q --tags origin && git -C "$KIT" checkout -q --detach "$KIT_TAG" || KIT_OK=0
+    fi
   else
     say "cloning $KIT_URL into $KIT at $KIT_TAG"
     mkdir -p "$(dirname "$KIT")"
     { git clone -q "$KIT_URL" "$KIT" && git -C "$KIT" checkout -q --detach "$KIT_TAG"; } || KIT_OK=0
   fi
 fi
-KIT_INSTALL_ARGS="--vault $BRAIN --defaults 02-projects/_templates/handoff-defaults.yml --projects 02-projects"
 if [ "$KIT_OK" = 1 ] && [ "$KIT_SKIP" = 0 ]; then
-  bash "$KIT/install.sh" $KIT_INSTALL_ARGS || KIT_OK=0
+  if python3 -I "$BRAIN/setup-state.py" kit "$KIT" "$BRAIN"; then
+    say "kit components verified: no reinstall needed"
+  else
+    bash "$KIT/install.sh" --vault "$BRAIN" --defaults 02-projects/_templates/handoff-defaults.yml --projects 02-projects || KIT_OK=0
+  fi
+  if [ "$KIT_OK" = 1 ] && [ "$KIT_CUSTOM" = 1 ]; then env_set SETUP_KIT "$KIT"; fi
 fi
 [ "$KIT_OK" = 1 ] || record_bad "handoff kit" "re-run ./setup.sh, then run the failing command by hand to read its message"
 
@@ -526,9 +617,13 @@ if [ "$NEED_RC" = 1 ]; then
   else
     say "$HOME/.local/bin is not on PATH. This block would be appended to $RC:"
     rc_text | sed 's/^/    /'
-    if confirm "append it?"; then
+    RC_CHOICE=$(saved_choice SETUP_SHELL_PATH)
+    if [ "$RC_CHOICE" = y ] || { [ -z "$RC_CHOICE" ] && confirm "append it?"; }; then
       { printf '\n'; rc_text; } >>"$RC"
+      env_set SETUP_SHELL_PATH y
       say "appended to $RC (open a new shell to pick it up)"
+    else
+      env_set SETUP_SHELL_PATH n
     fi
   fi
   case ":$PATH:" in *":$HOME/.local/bin:"*) ;; *) PATH="$HOME/.local/bin:$PATH"; export PATH ;; esac
@@ -567,6 +662,29 @@ def ours(e, ev):
     return isinstance(e, dict) and e.get("command") == mine[ev][0]["command"]
 if mode == "present":
     sys.exit(0 if any(ours(e, ev) for ev in mine for e in entries(ev) or []) else 1)
+if mode == "ready":
+    p = config("path")
+    if p.returncode or not p.stdout.strip():
+        sys.exit(1)
+    try:
+        with open(os.path.join(os.path.dirname(p.stdout.strip()), "shell-hooks-allowlist.json")) as fh:
+            approvals = json.load(fh)["approvals"]
+        for ev, (entry, script) in mine.items():
+            cur = entries(ev) or []
+            if [e for e in cur if ours(e, ev)] != [entry]:
+                sys.exit(1)
+            if not isinstance(approvals, list) or any(not isinstance(a, dict) for a in approvals):
+                sys.exit(1)
+            matching = [a for a in approvals if a.get("event") == ev and a.get("command") == entry["command"]]
+            stamp = datetime.datetime.fromtimestamp(os.path.getmtime(script), datetime.timezone.utc).isoformat().replace("+00:00", "Z")
+            if len(matching) != 1 or matching[0].get("script_mtime_at_approval") != stamp:
+                sys.exit(1)
+            approved_at = matching[0].get("approved_at")
+            if not isinstance(approved_at, str) or datetime.datetime.fromisoformat(approved_at.replace("Z", "+00:00")).tzinfo is None:
+                sys.exit(1)
+    except (OSError, ValueError, KeyError, TypeError):
+        sys.exit(1)
+    sys.exit(0)
 p = config("path")
 if p.returncode or not p.stdout.strip():
     sys.exit(1)
@@ -599,7 +717,7 @@ os.replace(tmp, allow)
 PY
 }
 hermes_hooks_record() {
-  if hermes_hooks set; then record_ok "hermes hooks"; else record_bad "hermes hooks" "$HH_LATER"; fi
+  if hermes_hooks ready || hermes_hooks set; then record_ok "hermes hooks"; else record_bad "hermes hooks" "$HH_LATER"; fi
 }
 
 # Steps 8 and 9 ask about this host: --update leaves them alone, except the journal times.
@@ -607,7 +725,9 @@ if [ "$MODE" = setup ]; then
 # ---- Step 8: backends -------------------------------------------------------------
 step "8. Backends"
 if [ "$HAVE_BACKENDS" = 0 ]; then
-  if [ "$YES" = 1 ]; then BACKENDS=claude
+  if ! seed_copied brain.env; then BACKENDS=$(env_get SETUP_BACKENDS "$(env_get DEFAULT_BACKEND "")"); fi
+  if [ -n "$BACKENDS" ]; then :
+  elif [ "$YES" = 1 ]; then BACKENDS=claude
   else
     BACKENDS=$(ask "Backends (any of claude, hermes, devin)" "claude" | tr ',' ' ')
     HAVE_BACKENDS=1
@@ -664,16 +784,25 @@ setup_hermes() {
     record_bad "backend hermes" "run hermes once to create ~/.hermes, set its provider and log in, then ./setup.sh"
     return
   fi
-  [ "$KIT_OK" = 1 ] && { bash "$KIT/install.sh" $KIT_INSTALL_ARGS --hermes-profiles || true; }
+  if [ "$KIT_OK" = 1 ] && { [ ! -d "$HOME/.hermes/profiles/review" ] || [ ! -d "$HOME/.hermes/profiles/run" ] || [ ! -d "$HOME/.hermes/profiles/close" ]; }; then
+    bash "$KIT/install.sh" --vault "$BRAIN" --defaults 02-projects/_templates/handoff-defaults.yml --projects 02-projects --hermes-profiles \
+      || record_bad "hermes profiles" "run the kit installer with --hermes-profiles"
+  fi
   say "hermes: set its provider and log in (see '## Hermes profiles' in $KIT/README.md)"
   record_ok "backend hermes"
+  if [ -z "$HERMES_HOOKS" ]; then
+    HERMES_HOOKS=$(saved_choice SETUP_HERMES_HOOKS)
+    if [ -z "$HERMES_HOOKS" ] && hermes_hooks present; then HERMES_HOOKS=y; fi
+  fi
   case "$HERMES_HOOKS" in
-    y) hermes_hooks_record ;;
-    n) say "hermes hooks: not registered (later: $HH_LATER)" ;;
+    y) env_set SETUP_HERMES_HOOKS y; hermes_hooks_record ;;
+    n) env_set SETUP_HERMES_HOOKS n; say "hermes hooks: not registered (later: $HH_LATER)" ;;
     *)
       if confirm "Register the brain's Bash guard and auto-commit as hermes hooks (default profile)?"; then
+        env_set SETUP_HERMES_HOOKS y
         hermes_hooks_record
       else
+        env_set SETUP_HERMES_HOOKS n
         say "hermes hooks: not registered (later: $HH_LATER)"
       fi ;;
   esac
@@ -705,21 +834,30 @@ if [ "$HAVE_BACKENDS" = 1 ] || seed_copied brain.env; then
   set -- $BACKENDS
   env_set DEFAULT_BACKEND "$1"
 fi
+env_set SETUP_BACKENDS "$BACKENDS"
 
 # ---- Step 9: extras ---------------------------------------------------------------
 step "9. Extras"
-want() { # want <flag value> <question>: the flag wins; else no under --yes, else ask
-  case "$1" in y) return 0 ;; n) return 1 ;; esac
-  [ "$YES" = 1 ] && return 1
-  confirm "$2"
+want() { # want <flag value> <preference key> <question>: explicit > saved > ask
+  local value=$1
+  [ -n "$value" ] || value=$(saved_choice "$2")
+  if [ -z "$value" ]; then
+    if [ "$YES" = 0 ] && confirm "$3"; then value=y; else value=n; fi
+  fi
+  env_set "$2" "$value"
+  [ "$value" = y ]
 }
 
 # Linger: user timers run with no login session.
 if [ "$PLATFORM" = macos ]; then
   say "linger: skipped, launchd agents run while the user is logged in"
-elif want "$LINGER" "Keep your user services running with no login session (loginctl enable-linger)?"; then
+elif want "$LINGER" SETUP_LINGER "Keep your user services running with no login session (loginctl enable-linger)?"; then
+  if [ "$(loginctl show-user "${USER:-$(id -un)}" -p Linger --value 2>/dev/null || true)" = yes ]; then
+    say "linger: already enabled"
+  else
   say "+ loginctl enable-linger ${USER:-$(id -un)}"
   loginctl enable-linger "${USER:-$(id -un)}" || record_bad "linger" "loginctl enable-linger ${USER:-$(id -un)}"
+  fi
   [ "$PLATFORM" != wsl2 ] || say "WSL2: the timers fire only while the WSL VM is running."
 else
   say "linger: not enabled"
@@ -729,7 +867,8 @@ fi
 NOTIFY_ENV="$HOME/.config/handoff/notify.env"
 tg_get() { grep "^$1=" "$NOTIFY_ENV" 2>/dev/null | tail -n 1 | cut -d= -f2- || true; }
 tg_ready() { [ -n "$(tg_get TELEGRAM_BOT_TOKEN)" ] && [ -n "$(tg_get TELEGRAM_CHAT_ID)" ]; }
-if want "$TELEGRAM" "Set up Telegram notifications?"; then
+if [ -z "$TELEGRAM" ] && [ -z "$(saved_choice SETUP_TELEGRAM)" ] && tg_ready; then TELEGRAM=y; fi
+if want "$TELEGRAM" SETUP_TELEGRAM "Set up Telegram notifications?"; then
   if tg_ready; then
     say "kept $NOTIFY_ENV"
   else
@@ -753,7 +892,7 @@ if want "$TELEGRAM" "Set up Telegram notifications?"; then
   fi
   if tg_ready; then
     env_set NOTIFY telegram
-    if [ "$YES" = 0 ] && confirm "Send one test message?"; then
+    if [ "$TELEGRAM_TEST" = 1 ]; then
       # The token goes to curl on stdin, never on its command line.
       if printf 'url = "https://api.telegram.org/bot%s/sendMessage"\n' "$(tg_get TELEGRAM_BOT_TOKEN)" \
            | curl -fsS -m 20 -X POST -K - --data-urlencode "chat_id=$(tg_get TELEGRAM_CHAT_ID)" \
@@ -765,12 +904,17 @@ if want "$TELEGRAM" "Set up Telegram notifications?"; then
     fi
   fi
 else
+  env_set NOTIFY ""
   say "telegram: not set up"
 fi
 
 # Journal timers.
-if want "$JOURNAL" "Install the journal timers (/rollup and /day-log on weekday evenings, /week-recap on Mondays)?"; then
-  if ! bash "$BRAIN/journal/install.sh" "$BRAIN" --daily "$J_DAILY" --weekly "$J_WEEKLY"; then
+if want "$JOURNAL" SETUP_JOURNAL "Install the journal timers (/rollup and /day-log on weekday evenings, /week-recap on Mondays)?"; then
+  env_set SETUP_JOURNAL_DAILY "$J_DAILY"
+  env_set SETUP_JOURNAL_WEEKLY "$J_WEEKLY"
+  if python3 -I "$BRAIN/setup-state.py" journal "$KIT" "$BRAIN" "$J_DAILY" "$J_WEEKLY"; then
+    say "journal timers verified: no reinstall needed"
+  elif ! bash "$BRAIN/journal/install.sh" "$BRAIN" --daily "$J_DAILY" --weekly "$J_WEEKLY"; then
     record_bad "journal timers" "on WSL2 enable systemd ([boot] systemd=true in /etc/wsl.conf, then wsl --shutdown); then ./setup.sh --journal y"
   fi
 else

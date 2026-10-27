@@ -23,7 +23,7 @@ CODE=$TMP/code
 GIT_ID=(-c user.name=tester -c user.email=tester@example.invalid -c commit.gpgsign=false)
 SETUP_ARGS=(--yes --name ci --role ci --languages bash --principles KISS --code-root "$CODE" --remote none)
 
-fail_all() { local c; for c in "${CASES[@]}"; do fail "$c" "$1"; done; echo "$passed passed, $failed failed"; exit 1; }
+fail_all() { [ ! -f "$TMP/first.log" ] || cat "$TMP/first.log"; local c; for c in "${CASES[@]}"; do fail "$c" "$1"; done; echo "$passed passed, $failed failed"; exit 1; }
 
 sandbox() { # sandbox <command...>: run under env -i with the sandbox HOME and PATH
   env -i HOME="$HOME_DIR" TMPDIR="$TMP/tmp" USER=ci LANG=C.UTF-8 SHELL=/bin/bash \
@@ -80,16 +80,20 @@ chmod +x "$TMP/fakes"/*
 # chmod above, so it gets its own. Creates $HOME/.hermes.
 fake_hermes() {
   mkdir -p "$HOME_DIR/.hermes"
+  printf 'model:\n  default: fixture-model\n' >"$HOME_DIR/.hermes/config.yaml"
   cat >"$TMP/fakes/hermes" <<EOF
 #!/usr/bin/env bash
 echo "hermes \$*" >>"$TMP/log/hermes.log"
 exec python3 -I -c '
 import json, os, sys
 a = sys.argv[1:]
+profile = "default"
 if a[:1] == ["-p"]:
+    profile = a[1]
     a = a[2:]
 home = os.environ["HOME"]
-cfg = home + "/.hermes/config.json"
+base = home + "/.hermes" + ("/profiles/" + profile if profile != "default" else "")
+cfg = base + "/config.json"
 def load():
     try:
         with open(cfg) as fh:
@@ -99,8 +103,11 @@ def load():
 if a[:1] != ["config"] or len(a) < 2:
     sys.exit(0)
 if a[1] == "path":
-    print(home + "/.hermes/config.yaml")
+    print(base + "/config.yaml")
 elif a[1] == "get":
+    if a[2] == "model":
+        print(json.dumps({"default": "fixture-model", "provider": "auto"}))
+        sys.exit(0)
     v = load()
     for k in a[2].split("."):
         if not isinstance(v, dict) or k not in v:
@@ -132,3 +139,6 @@ git -C "$TMP/src" add -A
 git -C "$TMP/src" "${GIT_ID[@]}" commit -q -m template
 git clone -q --bare "$TMP/src" "$TMP/template.git"
 git clone -q "$TMP/template.git" "$BRAIN"
+
+git -C "$BRAIN" remote rename origin template
+git -C "$BRAIN" remote set-url --push template DISABLED

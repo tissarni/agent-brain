@@ -82,11 +82,20 @@ git clone https://github.com/tissarni/agent-brain my-brain
 cd my-brain && ./setup.sh
 ```
 
-`setup.sh` takes a fresh clone to a working brain and is safe to run again: it never overwrites
-a file of yours. It asks five questions: your name, role, working languages, principles, and the
-root directory of your code repos. With `--yes` it asks nothing and the flags answer instead:
-`--name`, `--role`, `--languages`, `--principles`, `--code-root` (the defaults are your git
-name, `software engineer`, none, `TDD, SOLID, YAGNI, KISS, DRY` and `~/projects`).
+`setup.sh` takes a fresh clone to a working brain. On the first run it asks your name, role,
+working languages, principles, and code root. A plain rerun **resumes**: personalized identity
+and seeds stay intact, the saved code root and backend selection are reused, and previously
+declined optional steps are not asked again. Preferences live as non-secret `SETUP_*` keys in
+`brain.env`, read as data, never sourced. They are not a completed marker: missing commands,
+skills, timer components and hooks are checked and repaired; final checks always run.
+On macOS, installed Homebrew GNU tools and modern Bash are activated before dependency checks.
+
+Explicit flags override saved choices. `--name`, `--role`, `--languages` and `--principles`
+update only the standard identity fields, preserving personal rules; a custom identity layout
+requires manual editing rather than a guessed rewrite. `--code-root` updates the saved root.
+With `--yes` setup asks nothing, but **keeps saved choices** rather than resetting to defaults.
+Only a first run uses defaults for omitted answers: your git name, `software engineer`, none,
+`TDD, SOLID, YAGNI, KISS, DRY` and `~/projects`.
 `--backends claude,hermes,devin` picks the agent backends, `--kit <dir>` uses a kit checkout
 instead of the one pinned in `handoff-kit.pin`, and `--remote <name>|none` creates a private
 GitHub repository for the brain.
@@ -96,9 +105,18 @@ login session, `--telegram y|n` sets up Telegram notifications, and `--journal y
 journal timers (`--journal-daily HH:MM`, `--journal-weekly HH:MM`). `--hermes-hooks y|n` answers whether to
 register the brain's hooks with hermes (see Backends).
 
+Telegram keeps existing credentials without sending anything. Only `--telegram-test` requests
+one test message (it implies `--telegram y`; combining it with `--telegram n` is refused).
+`--telegram n` disables this brain's notifications but does not delete the credential file.
+Declining journal/linger/hooks means no new installation or reconciliation, not uninstalling
+existing host-wide components. A saved `y` is consent to repair missing/outdated components.
+Older installations without saved decisions reuse discoverable configuration; an optional
+choice that cannot be inferred safely is asked once. No template merge is needed to configure Telegram.
+
 **Update.** `./setup.sh --update` merges the template's latest into the brain, never rebases,
-and re-runs the idempotent steps. The clone's `origin` becomes the `template` remote, with its
-push URL set to `DISABLED`: it is only ever pulled from. Commit your changes first. It lists the
+and re-runs the idempotent steps. Only a recognized upstream template `origin` becomes the
+`template` remote, with its push URL set to `DISABLED`; an existing personal remote is kept.
+This is a template fetch/merge operation, not a Telegram-only shortcut. Commit your changes first. It lists the
 template-owned files you changed locally, since those may conflict; a conflict stops with
 `git merge --abort` as the way back.
 

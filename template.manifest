@@ -92,6 +92,10 @@ tests/setup-acceptance.sh
 tests/setup_acceptance_test.py
 tests/backend_diagnostics_test.py
 tests/setup-smoke.sh
+setup-state.py
+tests/setup-resume.sh
+tests/setup-components.sh
+tests/setup_state_test.py
 journal
 tests/journal.sh
 extract-template.sh
