@@ -142,7 +142,11 @@ is_gnu() { case "$("$1" --version 2>&1 || true)" in *GNU*) return 0 ;; *) return
 tool_ok() {
   case "$1" in
     bash) [ "${BASH_VERSINFO[0]}" -ge 4 ] ;;
-    coreutils) is_gnu sort ;;
+    # Ubuntu 26.04 defaults to uutils; reinstalling coreutils keeps that provider.
+    # Both providers support the coreutils flags used here; BSD/unknown tools do not.
+    coreutils) case "$(sort --version 2>&1 || true)" in
+      *GNU*|*'uutils coreutils'*) return 0 ;; *) return 1 ;;
+    esac ;;
     findutils) is_gnu find ;;
     sed) is_gnu sed ;;
     grep) is_gnu grep ;;
@@ -749,7 +753,7 @@ if want "$TELEGRAM" "Set up Telegram notifications?"; then
   fi
   if tg_ready; then
     env_set NOTIFY telegram
-    if confirm "Send one test message?"; then
+    if [ "$YES" = 0 ] && confirm "Send one test message?"; then
       # The token goes to curl on stdin, never on its command line.
       if printf 'url = "https://api.telegram.org/bot%s/sendMessage"\n' "$(tg_get TELEGRAM_BOT_TOKEN)" \
            | curl -fsS -m 20 -X POST -K - --data-urlencode "chat_id=$(tg_get TELEGRAM_CHAT_ID)" \
@@ -832,18 +836,12 @@ for c in handoff-launch handoff-orchestrate brief-check; do
   if command -v "$c" >/dev/null 2>&1; then record_ok "$c on PATH"
   else record_bad "$c on PATH" "add this to $RC: $RC_BLOCK_LINE"; fi
 done
-bin_of() { if command -v "$1" >/dev/null 2>&1; then command -v "$1"; else echo "$HOME/.local/bin/$1"; fi; }
-EX_BRIEF=""
-for f in "$BRAIN"/02-projects/example/subprojects/example-version-flag/specs/*-brief-1-*; do
-  [ -f "$f" ] && { EX_BRIEF=$f; break; }
-done
-FIX_BY_HAND="re-run ./setup.sh, then run the failing command by hand to read its message"
-if [ -n "$EX_BRIEF" ]; then
-  if out=$("$(bin_of brief-check)" "$EX_BRIEF" 2>&1); then record_ok "brief-check on the example brief"
-  else record_bad "brief-check on the example brief" "$FIX_BY_HAND"; printf '%s\n' "$out" | tail -n 5 | sed 's/^/    /'; fi
-  if out=$("$(bin_of handoff-launch)" loop "$EX_BRIEF" --gate auto --backend "$DB" --dry-run 2>&1); then
-    record_ok "handoff-launch loop dry-run"
-  else record_bad "handoff-launch loop dry-run" "$FIX_BY_HAND"; printf '%s\n' "$out" | tail -n 5 | sed 's/^/    /'; fi
+
+
+if sh "$BRAIN/setup-check.sh" --brain "$BRAIN"; then
+  record_ok "local setup acceptance (live handoff NOT TESTED)"
+else
+  record_bad "local setup acceptance" "run ./setup-check.sh; live model/auth is separate and opt-in"
 fi
 
 echo
@@ -855,9 +853,10 @@ while IFS="$TAB" read -r kind label fix; do
 done <<EOF
 $RES
 EOF
-if [ -n "$EX_BRIEF" ]; then
-  echo
-  echo "First command to try:"
-  echo "  handoff-launch loop $EX_BRIEF --gate auto --backend $DB"
-fi
+echo
+echo "First command to try (free, no model requests):"
+echo "  ./setup-check.sh"
+echo "Optional end-to-end canary (uses your model quota; disposable repositories):"
+echo "  ./setup-check.sh --live --backend $DB --keep"
+echo "Live handoff and optional integration delivery are NOT TESTED by setup."
 [ "$BAD" = 0 ]

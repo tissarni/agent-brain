@@ -86,6 +86,11 @@ sync-skills.sh
 handoff-kit.pin
 tests/seeds.sh
 setup.sh
+setup-check.sh
+setup-check.py
+tests/setup-acceptance.sh
+tests/setup_acceptance_test.py
+tests/backend_diagnostics_test.py
 tests/setup-smoke.sh
 journal
 tests/journal.sh

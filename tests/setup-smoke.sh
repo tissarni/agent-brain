@@ -6,7 +6,7 @@
 
 CASES=(setup-runs commands-resolve seeds-filled demo-repo git-config remote-template
   example-brief-check loop-dry-run idempotent nothing-installed bad-flag extras bad-time
-  ignores-temp-files env-first-wins hermes-hooks)
+  ignores-temp-files env-first-wins hermes-hooks uutils-coreutils unknown-coreutils)
 
 . "$(dirname "$0")/sandbox.sh"
 
@@ -108,8 +108,8 @@ case_extras() {
   [ "$(stat -c %a "$nt" 2>/dev/null || stat -f %Lp "$nt")" = 600 ] || { fail extras "notify.env is not mode 600"; return; }
   /usr/bin/grep -q '^TELEGRAM_BOT_TOKEN=.' "$nt" && /usr/bin/grep -q '^TELEGRAM_CHAT_ID=.' "$nt" || { fail extras "notify.env lacks a key"; return; }
   /usr/bin/grep -q -x 'NOTIFY=telegram' "$BRAIN/brain.env" || { fail extras "brain.env lacks NOTIFY=telegram"; return; }
-  ! /usr/bin/grep -q -F 'fake-token-123' "$TMP/log/curl.log" || { fail extras "curl.log holds the token"; return; }
-  [ -s "$TMP/log/curl.log" ] || { fail extras "no test message sent"; return; }
+  [ ! -s "$TMP/log/curl.log" ] || { fail extras "unattended setup sent an unsolicited test message"; return; }
+  /usr/bin/grep -q 'NOT TESTED: telegram' "$TMP/setup3.log" || { fail extras "Telegram delivery incorrectly marked tested"; return; }
   if [ "$(uname -s)" = Darwin ]; then
     /usr/bin/grep -q 'bootstrap' "$TMP/log/launchctl.log" || { fail extras "launchctl saw no bootstrap"; return; }
   else
@@ -171,7 +171,30 @@ case_env_first_wins() {
   rc=$?
   /usr/bin/grep -v -x 'DEFAULT_BACKEND=devin' "$BRAIN/brain.env" >"$TMP/env" && cat "$TMP/env" >"$BRAIN/brain.env"
   [ "$rc" -eq 0 ] || { fail env-first-wins "exit $rc: $(tail_log "$TMP/setup4.log")"; return; }
-  /usr/bin/grep -q -e '--gate auto --backend claude$' "$TMP/setup4.log" && pass env-first-wins || fail env-first-wins "backend is not claude: $(tail_log "$TMP/setup4.log")"
+  /usr/bin/grep -q -e './setup-check.sh --live --backend claude --keep$' "$TMP/setup4.log" && pass env-first-wins || fail env-first-wins "backend is not claude: $(tail_log "$TMP/setup4.log")"
+}
+
+# Exercise dependency detection through the real unattended setup entry point.
+# Only the provider banner is simulated; sorting still uses the host executable.
+case_coreutils_provider() {
+  local provider=$1 expected=$2 rc real_sort
+  real_sort=$(command -v sort)
+  printf '#!/bin/sh\nif [ "${1:-}" = --version ]; then printf "%%s\\n" "%s"; exit 0; fi\nexec "%s" "$@"\n' \
+    "$provider" "$real_sort" >"$TMP/fakes/sort"
+  chmod +x "$TMP/fakes/sort"
+  sandbox "$BRAIN/setup.sh" "${SETUP_ARGS[@]}" --kit "$KIT" >"$TMP/provider.log" 2>&1
+  rc=$?
+  rm "$TMP/fakes/sort"
+  if [ "$expected" = accept ]; then
+    [ "$rc" -eq 0 ] || { fail uutils-coreutils "exit $rc: $(tail_log "$TMP/provider.log")"; return; }
+    ! /usr/bin/grep -q 'dependency coreutils\|missing:.*coreutils' "$TMP/provider.log" || { fail uutils-coreutils "compatible provider rejected"; return; }
+    pass uutils-coreutils
+  else
+    # macOS may recover by prepending already-installed Homebrew GNU tools.
+    # Assert initial refusal, not failure after a legitimate PATH repair.
+    /usr/bin/grep -q 'missing:.*coreutils' "$TMP/provider.log" \
+      && pass unknown-coreutils || fail unknown-coreutils "unknown provider was not identified as missing: $(tail_log "$TMP/provider.log")"
+  fi
 }
 
 case_setup_runs
@@ -190,6 +213,8 @@ case_bad_time
 case_env_first_wins
 case_ignores_temp_files
 case_hermes_hooks
+case_coreutils_provider 'sort (uutils coreutils) 0.10.0' accept
+case_coreutils_provider 'sort (unknown implementation) 1.0' refuse
 
 echo "$passed passed, $failed failed"
 [ "$failed" -eq 0 ]

@@ -102,27 +102,103 @@ push URL set to `DISABLED`: it is only ever pulled from. Commit your changes fir
 template-owned files you changed locally, since those may conflict; a conflict stops with
 `git merge --abort` as the way back.
 
-**The example.** Setup copies a demo main, `02-projects/example/`, and a demo repository next
-to your code repos, to try the handoff kit on. `./setup.sh --remove-example` deletes both, only
-what setup made, and nothing returns on a later `--update`. The demo repository has no GitHub or
-GitLab remote, so a real pull request needs a repository on one of them.
+**Setup acceptance.** The first command is now `./setup-check.sh`, not a coding exercise.
+The old `02-projects/example/` and `agent-brain-demo` seeds remain for compatibility;
+the checker never reads, resets or deletes an existing demo or project. Updates do not
+overwrite existing seeded notes. `./setup.sh --remove-example` remains the legacy cleanup
+command; it is not needed to run acceptance checks.
 
 **Platforms.** Linux, WSL2 and macOS. On macOS, setup installs bash 4 and the GNU tools
 through Homebrew when they are missing.
 
-## Your first loop
+## Check your setup
 
-Setup ends by printing the command for the example brief. Try it with `--dry-run` first: it
-starts nothing and shows the resolved configuration.
-
+```sh
+./setup-check.sh                  # free, deterministic; also run at the end of setup
+./setup-check.sh --json           # machine-readable scoped results
+./setup-check.sh --live --keep    # EXPLICIT opt-in: uses model quota / may be billed
+./setup-check.sh --live --backend hermes --model <supported-model> --keep
 ```
-handoff-launch loop <example brief> --gate auto --backend claude --dry-run
-handoff-launch loop <example brief> --gate auto --backend claude
-```
 
-The loop is review, revise, run, close, debrief, each a fresh agent session. Without
-`--dry-run` it starts those sessions on your own account, so they use your quota or are billed
-to you.
+The free checks verify brain configuration, executable discovery, a fresh local Git
+fixture and Python baseline tests, `brief-check`, and the real launcher's `--dry-run`.
+They block real backend execution. The pinned Devin launcher probes auth even during
+dry-run: the checker supplies an explicitly offline stub for that prerequisite, never
+the real auth command. This proves parser/config resolution, **not authentication**.
+A successful free run exits 0 but
+prints **live handoff: NOT TESTED**; this is not end-to-end PASS. Missing prerequisites
+or malformed configured integrations exit 1. Usage errors exit 2.
+
+Backend registration checks are read-only and selected-backend-specific:
+
+- **Claude:** reads only the brain's `.claude/settings.json` and optional
+  `settings.local.json`; checks context, Bash guard and auto-commit event/command/
+  matcher bindings and script files. Disabled hooks, malformed settings or a local
+  event override lacking the expected registration fail conservatively. User/global
+  policy and actual hook execution remain **NOT TESTED**.
+- **Hermes:** the pinned kit uses `review`, `run`, `close`, and `default` for notes
+  stages, regardless of the interactive profile. For those exact profiles the checker
+  verifies config-file presence, `hermes -p <profile> config path` binding, role
+  `SOUL.md` role/protocol clauses (including the exact review output block) and the
+  selected `model` object via `config get --json --raw`. The model must also equal
+  the literal `model.default` read by the pinned launcher's parser; quoted/commented
+  scalars or a redirected CLI that disagree with that parser fail rather than
+  certifying a different model. Customized SOUL prose is preserved, but removing
+  required protocol clauses fails. This is static contract presence, not a semantic
+  audit of every customized instruction.
+  A nonempty default model is required; provider can be omitted for auto-selection.
+  No credentials are read. Optional brain hooks belong to **default only**, as in
+  setup: event lists are queried read-only; commands, matcher, scripts and exact
+  script-mtime approvals in `shell-hooks-allowlist.json` must agree. An absent pair
+  is **NOT CONFIGURED**, not failure; a partially registered pair fails. No role
+  profile is required to carry these brain-only hooks. Unsupported/failed config
+  queries are **NOT TESTED**, not PASS; missing/malformed required files or values fail.
+- **Devin:** has no kit role-profile contract; configuration support is explicitly
+  **NOT TESTED**, never a fabricated profile PASS.
+
+These checks do not execute hook commands or authenticate. Registration PASS proves
+neither provider reachability nor semantic correctness of customized role instructions.
+Paths follow kit v1.0.1's `$HOME/.hermes` contract; a CLI redirected to a different
+profile/config root fails binding verification rather than silently auditing it.
+Config values, command output and exceptions are not printed. The only backend CLI
+operations in free mode are the bounded Hermes `config path/get` queries above.
+
+`--live` uses the installed launcher for review → revise → run → close → debrief.
+Every invocation creates unique private directories under `TMPDIR` (or the OS temp
+directory): disposable notes, a tiny code repo and its local bare origin. The version
+flag is merely the canary's test change, not a task for your real project. No external
+push or PR is needed or permitted. Git transport is restricted to local files and
+forge/service command shims refuse PRs or timer activation. The kit's hooks and config
+are written under a disposable HOME; only the backend CLI runs with its original HOME
+to use its existing authentication/profiles. No installation or model-default changes
+are made. This is **working-directory isolation, not an OS security sandbox**: only
+run a trusted installed launcher/backend. Models retain their usual tool permissions.
+
+PASS requires more than launcher exit 0 or a model's report: structured review and
+clean revise gate, completion and close-audit blocks, successful launcher done-when
+results, debrief and `handoff: closed`, a new Git commit descended from the baseline,
+exactly the expected code/test files changed, unchanged original tests, new regression
+coverage, a clean tree, and fresh independent tests and behavior probes. Missing,
+malformed or symlink artifacts, skipped stages, failed auth, unsupported models and
+nonzero launcher exits fail. No fallback model is selected. The check is deliberately
+stricter than the launcher's acceptance of a PARTIAL completion report.
+
+The pinned kit may still demand a forge PR even with a local origin. Such a blocked
+canary is **FAIL**, not a pretend success; inspect retained artifacts. `--timeout 1800`
+is the default whole-loop deadline; timed-out process groups are killed. Fixtures are
+removed by default. `--keep` copies evidence to a private directory and prints its path;
+logs can contain sensitive model output, so do not publish them unredacted.
+
+Telegram and journal are reported independently as **NOT CONFIGURED**, **FAIL** (invalid
+or incomplete configuration), or configuration-only **PASS** plus delivery/execution
+**NOT TESTED**. No token is printed, Telegram message sent, journal job run, or timer
+enabled by the checker, even with `--live`. A config-file PASS proves neither credentials
+nor service health. Setup's `--yes --telegram y` saves configuration but no longer sends
+a test message without an interactive confirmation. Existing explicit journal setup
+flags keep their behavior; the acceptance checker itself never activates them.
+
+Offline tests: `bash tests/setup-acceptance.sh`. These use executable fakes and genuine
+local Git/Python checks; they do **not** prove a paid live run or macOS runtime success.
 
 ## Backends
 
