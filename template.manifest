@@ -92,6 +92,7 @@ tests/setup-acceptance.sh
 tests/setup_acceptance_test.py
 tests/backend_diagnostics_test.py
 tests/setup-smoke.sh
+tests/setup-default-kit.sh
 setup-state.py
 tests/setup-resume.sh
 tests/setup-components.sh
