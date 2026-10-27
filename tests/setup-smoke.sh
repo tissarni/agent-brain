@@ -177,23 +177,35 @@ case_env_first_wins() {
 # Exercise dependency detection through the real unattended setup entry point.
 # Only the provider banner is simulated; sorting still uses the host executable.
 case_coreutils_provider() {
-  local provider=$1 expected=$2 rc real_sort
+  local provider=$1 expected=$2 rc direct_rc real_sort
   real_sort=$(command -v sort)
   printf '#!/bin/sh\nif [ "${1:-}" = --version ]; then printf "%%s\\n" "%s"; exit 0; fi\nexec "%s" "$@"\n' \
     "$provider" "$real_sort" >"$TMP/fakes/sort"
   chmod +x "$TMP/fakes/sort"
+  # Exercise the production predicate before macOS bootstrap replaces the fake
+  # with already-installed GNU tools. Still run the complete setup below.
+  sandbox python3 -I - "$BRAIN/setup.sh" "$TMP/provider-check.sh" <<'PY'
+from pathlib import Path
+import sys
+source = Path(sys.argv[1]).read_text()
+start = source.index('is_gnu() {')
+end = source.index('pkg_for() {', start)
+Path(sys.argv[2]).write_text(source[start:end] + '\ntool_ok coreutils\n')
+PY
+  sandbox bash "$TMP/provider-check.sh"
+  direct_rc=$?
   sandbox "$BRAIN/setup.sh" "${SETUP_ARGS[@]}" --kit "$KIT" >"$TMP/provider.log" 2>&1
   rc=$?
   rm "$TMP/fakes/sort"
   if [ "$expected" = accept ]; then
-    [ "$rc" -eq 0 ] || { fail uutils-coreutils "exit $rc: $(tail_log "$TMP/provider.log")"; return; }
+    [ "$rc" -eq 0 ] && [ "$direct_rc" -eq 0 ] || { fail uutils-coreutils "setup exit $rc, predicate exit $direct_rc: $(tail_log "$TMP/provider.log")"; return; }
     ! /usr/bin/grep -q 'dependency coreutils\|missing:.*coreutils' "$TMP/provider.log" || { fail uutils-coreutils "compatible provider rejected"; return; }
     pass uutils-coreutils
   else
-    # macOS may recover by prepending already-installed Homebrew GNU tools.
-    # Assert initial refusal, not failure after a legitimate PATH repair.
-    /usr/bin/grep -q 'missing:.*coreutils' "$TMP/provider.log" \
-      && pass unknown-coreutils || fail unknown-coreutils "unknown provider was not identified as missing: $(tail_log "$TMP/provider.log")"
+    # Initial bootstrap may replace the unknown fake before dependency detection;
+    # the actual production predicate must still refuse it in isolation.
+    [ "$direct_rc" -ne 0 ] \
+      && pass unknown-coreutils || fail unknown-coreutils "production predicate accepted an unknown provider"
   fi
 }
 
