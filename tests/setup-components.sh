@@ -43,7 +43,27 @@ sandbox "$BRAIN/setup.sh" --yes --journal y --journal-daily 21:17 >"$TMP/journal
 : >"$TMP/log/systemctl.log"
 : >"$TMP/log/launchctl.log"
 sandbox "$BRAIN/setup.sh" --yes >"$TMP/journal-keep.log" 2>&1
-if [ $? = 0 ] && ! grep -q 'enable --now' "$TMP/log/systemctl.log" && ! grep -q 'bootstrap' "$TMP/log/launchctl.log" && grep -q 'journal timers verified' "$TMP/journal-keep.log"; then pass journal-resume; else fail journal-resume 'valid timers reinstalled'; fi
+if [ $? = 0 ] && ! grep -q 'enable --now' "$TMP/log/systemctl.log" && ! grep -q 'bootstrap' "$TMP/log/launchctl.log" && grep -q 'journal timers verified' "$TMP/journal-keep.log"; then pass journal-resume; else
+  cat "$TMP/journal-keep.log"
+  sandbox python3 -I - "$BRAIN" <<'PY'
+import runpy, sys
+from pathlib import Path
+brain = Path(sys.argv[1])
+module = runpy.run_path(str(brain / 'setup-state.py'))
+def trace(frame, event, arg):
+    if frame.f_code.co_name == 'journal_ready' and event == 'return' and arg is False:
+        print('fixture journal rejection line:', frame.f_lineno)
+        for key in ['brain', 'home', 'path', 'expected', 'daily', 'weekly']:
+            if key in frame.f_locals: print(key, repr(frame.f_locals[key]))
+        p = frame.f_locals.get('path')
+        if p and p.exists(): print('fixture plist:', p.read_text())
+    return trace
+sys.settrace(trace)
+try: print('fixture journal result:', module['journal_ready'](brain.resolve(), Path.home(), '21:17', '06:00'))
+except Exception as exc: print('fixture journal exception:', type(exc).__name__, str(exc))
+PY
+  fail journal-resume 'valid timers reinstalled'
+fi
 if [ "$(uname -s)" = Darwin ]; then
   rm "$HOME_DIR"/Library/LaunchAgents/*journal.daily.*.plist
 else
@@ -54,7 +74,12 @@ if [ $? = 0 ] && ! grep -q 'journal timers verified' "$TMP/journal-repair.log"; 
 # Saved consent is not proof of working config, units or role profiles.
 printf 'VAULT=/missing-fixture\nHANDOFF_DEFAULTS=wrong\nHANDOFF_PROJECTS=wrong\n' >"$HOME_DIR/.config/handoff/config.env"
 sandbox "$BRAIN/setup.sh" --yes >"$TMP/config-repair.log" 2>&1
-if [ $? = 0 ] && grep -qx "VAULT=$BRAIN" "$HOME_DIR/.config/handoff/config.env"; then pass repair-kit-config; else fail repair-kit-config 'stale config not reconciled'; fi
+if [ $? = 0 ] && grep -qx "VAULT=$BRAIN" "$HOME_DIR/.config/handoff/config.env"; then pass repair-kit-config; else
+  printf 'fixture brain path: %s\n' "$BRAIN"
+  grep '^VAULT=' "$HOME_DIR/.config/handoff/config.env"
+  cat "$TMP/config-repair.log"
+  fail repair-kit-config 'stale config not reconciled'
+fi
 printf 'outdated\n' >"$HOME_DIR/.config/systemd/user/handoff-watchdog@.timer"
 sandbox "$BRAIN/setup.sh" --yes >"$TMP/watchdog-repair.log" 2>&1
 if [ $? = 0 ] && cmp -s "$KIT/systemd/handoff-watchdog@.timer" "$HOME_DIR/.config/systemd/user/handoff-watchdog@.timer"; then pass repair-watchdog; else fail repair-watchdog 'stale unit not reconciled'; fi
