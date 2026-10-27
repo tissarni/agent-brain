@@ -56,16 +56,16 @@ def require(condition, why):
         raise CheckError(why)
 
 
-def run(args, cwd, env, timeout=60, log=None, allow_unset=False):
+def run(args, cwd, env, timeout=60, log=None, allow_unset=False, stdout_only=False):
     """Bounded foreground commands, killing the whole process group on timeout."""
     with contextlib.ExitStack() as stack:
         # Reserve before running any child: a late symlink cannot redirect writes.
         stream = stack.enter_context(log.open('x', encoding='utf-8')) if log is not None else None
         with subprocess.Popen(args, cwd=cwd, env=env, stdin=subprocess.DEVNULL,
-                              stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE if stdout_only else subprocess.STDOUT,
                               text=True, start_new_session=True) as proc:
             try:
-                out, _ = proc.communicate(timeout=timeout)
+                out, err = proc.communicate(timeout=timeout)
             except (subprocess.TimeoutExpired, KeyboardInterrupt):
                 os.killpg(proc.pid, signal.SIGKILL)
                 out, _ = proc.communicate()
@@ -77,7 +77,7 @@ def run(args, cwd, env, timeout=60, log=None, allow_unset=False):
     # Agent output can contain credentials. Keep it in private launcher artifacts,
     # never interpolate it into diagnostic messages or reports.
     if proc.returncode != 0:
-        if allow_unset and 'Config key not set' in out:
+        if allow_unset and 'Config key not set' in out + (err or ''):
             return 'null'
         raise CommandFailed('%s exited %s (inspect private fixture logs)' % (Path(args[0]).name, proc.returncode))
     return out
@@ -350,7 +350,7 @@ def backend_diagnostics(brain, backend, record, home=None, hermes=None):
         def query(profile, *args):
             require(cli is not None, 'missing hermes')
             return run([cli, '-p', profile, 'config', *args], brain, dict(os.environ), timeout=15,
-                       allow_unset=bool(args and args[0] == 'get')).strip()
+                       allow_unset=bool(args and args[0] == 'get'), stdout_only=True).strip()
 
         def bound_config(profile):
             expected = expected_homes[profile] / 'config.yaml'

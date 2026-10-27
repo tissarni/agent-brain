@@ -81,6 +81,18 @@ class BackendDiagnostics(unittest.TestCase):
         self.assertEqual(r['hermes brain hooks'], 'NOT CONFIGURED')
         self.assertEqual(r['backend authentication/runtime'], 'NOT TESTED')
 
+    def test_stderr_banner_does_not_corrupt_machine_readable_config(self):
+        text = self.bin.read_text()
+        self.bin.write_text(text.replace('print(d[k])', 'print(' + repr(self.secret) + ', file=sys.stderr)\nprint(d[k])'))
+        r = self.diagnose()
+        self.assertTrue(all(r['hermes profile ' + p] == 'PASS' for p in ['default', 'review', 'run', 'close']))
+        self.assertEqual(r['hermes brain hooks'], 'NOT CONFIGURED')
+
+    def test_valid_stdout_with_nonzero_exit_is_not_accepted(self):
+        self.bin.write_text(self.bin.read_text().replace('print(d[k])', 'print(d[k])\nsys.exit(7)'))
+        r = self.diagnose()
+        self.assertFalse(any(r['hermes profile ' + p] == 'PASS' for p in ['default', 'review', 'run', 'close']))
+
     def test_missing_role_instructions(self):
         (self.home / '.hermes/profiles/run/SOUL.md').unlink()
         self.assertEqual(self.diagnose()['hermes profile run'], 'FAIL')
