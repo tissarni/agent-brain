@@ -97,8 +97,10 @@ With `--yes` setup asks nothing, but **keeps saved choices** rather than resetti
 Only a first run uses defaults for omitted answers: your git name, `software engineer`, none,
 `TDD, SOLID, YAGNI, KISS, DRY` and `~/projects`.
 `--backends claude,hermes,devin` picks the agent backends, `--kit <dir>` uses a kit checkout
-instead of the one pinned in `handoff-kit.pin`, and `--remote <name>|none` creates a private
-GitHub repository for the brain.
+instead of the revision pinned in `handoff-kit.pin`, and `--remote <name>|none` creates a private
+GitHub repository for the brain. The default kit revision is an immutable merged commit,
+including the Hermes notes-stage and completion-report compatibility repairs; despite its
+historical name, `HANDOFF_KIT_TAG` can hold a full commit SHA. Setup and CI use the same pin.
 
 Three extras are asked, or set by flag: `--linger y|n` keeps your user services running with no
 login session, `--telegram y|n` sets up Telegram notifications, and `--journal y|n` installs the
@@ -176,7 +178,7 @@ Backend registration checks are read-only and selected-backend-specific:
 
 These checks do not execute hook commands or authenticate. Registration PASS proves
 neither provider reachability nor semantic correctness of customized role instructions.
-Paths follow kit v1.0.1's `$HOME/.hermes` contract; a CLI redirected to a different
+Paths follow the pinned kit's `$HOME/.hermes` contract; a CLI redirected to a different
 profile/config root fails binding verification rather than silently auditing it.
 Config values, command output and exceptions are not printed. The only backend CLI
 operations in free mode are the bounded Hermes `config path/get` queries above.
