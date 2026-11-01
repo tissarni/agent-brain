@@ -105,12 +105,16 @@ Path: `02-projects/<main>/subprojects/<sub>/specs/YYYY-MM-DD-plan-<slug>.md`, fr
 `02-projects/_templates/plan.md`. Fill every field; stamp resolved values, never a
 reference to the defaults file:
 
+- `revision:` for a new plan, stamp `YYYY-MM-DD-r1` using today's date. When rewriting
+  an existing plan's phases or briefs, increment its revision suffix (`-r<N+1>`) and
+  ask for the risk category again in §3; every revision needs its own confirmation.
 - `backend:` what the user said. `model:` `''` unless they named one.
 - `branch:` the sub's `branch:`. A phase that must work elsewhere gets a `branch:` under
   its own `phases[]` entry, with the reason on the line.
-- `base:` `''` unless the PR must land somewhere other than `dev` (or `main` on a repo
-  with no `dev`). The run pushes every commit and opens one draft PR to the base; the
-  driver backstops both after each brief.
+- `base:` finalize after §4b. Use `dev` only when the final checkout is eligible under
+  §4b; otherwise keep `''` (the kit's default: `dev` when origin has it, else `main`).
+  The run pushes every commit and opens one draft PR to the base; the driver backstops
+  both after each brief.
 - `setup:` `''` unless the repo needs an install in a fresh checkout: one command, e.g.
   `(cd frontend && npm ci)`. §4b runs it, once, only when it makes a worktree.
 - `budgets:` from `02-projects/_templates/handoff-defaults.yml` `orchestration.budgets`,
@@ -151,7 +155,10 @@ measures anything.
    dropped from the sub. So `~/projects/WebApp` with `webapp-login-timeout` gives
    `~/projects/WebApp-login-timeout`.
    - Run
-     `git -C <repo> fetch -q origin && git -C <repo> worktree add --detach <sibling> origin/<base>`.
+     `git -C <repo> fetch -q origin && git -C <repo> worktree add --detach <sibling> origin/<seed-ref>`.
+     Use `origin/dev` as `<seed-ref>` only when it exists; otherwise use `origin/main`.
+     This is only the worktree's starting point, not the plan's PR target. Never create
+     `dev` or copy policy during planning; the orchestrator handles a missing `dev`.
      Reuse an existing sibling only when no plan left in step 1 points at it, and skip the
      `worktree add` for it. When the sibling exists and a plan left in step 1 points at it,
      stop and ask the operator for another name.
@@ -161,6 +168,13 @@ measures anything.
    - Set the sub's `repo:` to the sibling. `/handoff` reads that field, so §5 measures
      each brief's §2 in the tree it will run in.
 4. Say which case applied in the plan's Log line.
+5. Now determine eligibility authoritatively on the final checkout: `handoff-policy`
+   must be on PATH, its `origin` URL must contain `github.com`, and
+   `handoff-policy policy-get --repo <final-checkout>` must print exactly `auto`.
+   Use `base: dev` only when all three checks pass; otherwise use `base: ''`. The
+   preliminary check in §3 is only for proposing the question and never decides the
+   final base. Any assessment and effective-policy check also use this final checkout,
+   not the original repo when a worktree was selected or created.
 
 ## 5. Write the briefs of the current phase
 
