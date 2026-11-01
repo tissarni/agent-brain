@@ -48,7 +48,22 @@ Add `[[backlinks]]` to the parent and to everything in `related:`.
 └── subprojects/  ← create the empty dir
 ```
 
-## Step 3 — wire it up
+## Step 3 — merge policy
+After scaffolding, ask only for a main whose `repo:` is a local Git checkout, or a sub
+whose `repo:` differs from its main's and is a local Git checkout. If `repo: -`, say
+there is no code repository and skip. If it is not a Git checkout, do not ask; say the
+choice can be set later with `handoff-policy policy-init --repo <path> --choice true|false`.
+Only ask when `git -C <repo> remote get-url origin` contains `github.com`; otherwise say
+the repository stays manual because auto-merge is GitHub-only. If `handoff-policy` is
+unavailable, do not ask; say: "`handoff-policy` is unavailable; check that `~/.local/bin` is on PATH and that handoff kit v1.1.0 or newer is installed; update with `./setup.sh --update` if needed."
+Before asking, explain: auto = complete feature PRs into `dev` are squash-merged after a
+final review and green CI; `dev` → `main` always stays manual. Show the proposed value
+from `handoff-policy default-get` beside the current value from
+`handoff-policy policy-get --repo <path>`. Let the user confirm or flip it, then run
+`handoff-policy policy-init --repo <path> --choice true|false` and report its output.
+The kit's store is the only record of this choice; write it nowhere else.
+
+## Step 4 — wire it up
 1. If `AGENTS.local.md` is missing, create it with three headings, one blank line after
    each: `## Who I am`, `## Active projects` and `## Local rules`.
 2. Run `/rollup <main>`, for a sub's main or for the new main itself. It indexes the project
