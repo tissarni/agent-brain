@@ -94,8 +94,8 @@ Rules of thumb that decide most cases:
   One is fine when the second genuinely depends on it.
 
 Before asking, do a preliminary eligibility probe on the sub's original `repo:` only:
-`handoff-policy` must be on PATH, `git -C <repo> remote get-url origin` must contain
-`github.com`, and `handoff-policy policy-get --repo <repo>` must print exactly `auto`.
+`handoff-policy` must be on PATH, `git -C <repo> remote get-url origin` must name the
+host `github.com` exactly (`https://github.com/<owner>/<repo>` or `git@github.com:<owner>/<repo>`), and `handoff-policy policy-get --repo <repo>` must print exactly `auto`.
 Do not use this result to choose the plan base, record an assessment, or make any other
 decision; §4b recomputes eligibility on the final checkout.
 
@@ -112,7 +112,8 @@ unsure, and let the user confirm or change both. Categories are `ordinary`,
 `ordinary` remains manual unless the owner overrides it outside this skill. Do not ask
 a second question. A reply that answers the cut/backend but omits explicit risk
 confirmation, or silence, is not confirmation: record no assessment and treat the plan
-as human-merge. Never record an assessment during unattended execution. If the repo is manual, its origin is not
+as human-merge. Never record an assessment during unattended execution.
+If the repo is manual, its origin is not
 GitHub, or `handoff-policy` is missing, skip the risk question and say the plan waits
 for a human merge; if the tool is missing, also say to update the kit with
 `./setup.sh --update`.
@@ -187,9 +188,10 @@ measures anything.
      each brief's §2 in the tree it will run in.
 4. Say which case applied in the plan's Log line.
 5. Now determine eligibility authoritatively on the final checkout: `handoff-policy`
-   must be on PATH, its `origin` URL must contain `github.com`, and
+   must be on PATH, its `origin` URL must name the host `github.com` exactly (as in §3), and
    `handoff-policy policy-get --repo <final-checkout>` must print exactly `auto`.
-   Use `base: dev` only when all three checks pass; otherwise use `base: ''`. The
+   Use `base: dev` only when all three checks pass; otherwise use `base: ''`. Rewrite the
+   plan file's `base:` now with that value, since §4 wrote it before the checkout was known. The
    preliminary check in §3 is only for proposing the question and never decides the
    final base. Any assessment and effective-policy check also use this final checkout,
    not the original repo when a worktree was selected or created.
@@ -295,5 +297,7 @@ and nothing more:
 Then §3 again for the remaining phases (the cut may move now that the facts are in).
 Then §4 to update the plan — `phase:` bumped, the finished phase `status: done`, the new
 phase's `briefs:` filled, `orchestration: planned`, a dated Log line naming what the
-summary changed, §4b for the checkout, and §5–§6 for the new briefs. The old phase's briefs stay `closed` and
-are never edited.
+summary changed, §4b for the checkout, and §5–§7 for the new briefs, the merge disclosure and
+the hand-over. Adding a phase rewrites the plan's briefs, so it bumps `revision:` (`-r<N+1>`)
+and the risk is confirmed again in §3 before §4b records it. The old phase's briefs stay
+`closed` and are never edited.
