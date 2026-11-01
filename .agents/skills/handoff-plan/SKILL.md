@@ -93,11 +93,29 @@ Rules of thumb that decide most cases:
 - Two or three briefs per phase is normal. Six is a plan that should be looked at again.
   One is fine when the second genuinely depends on it.
 
+Before asking, do a preliminary eligibility probe on the sub's original `repo:` only:
+`handoff-policy` must be on PATH, `git -C <repo> remote get-url origin` must contain
+`github.com`, and `handoff-policy policy-get --repo <repo>` must print exactly `auto`.
+Do not use this result to choose the plan base, record an assessment, or make any other
+decision; §4b recomputes eligibility on the final checkout.
+
 Show the user the list with the cut marked and one line of why. Ask **once**: is the cut
 right, and which backend. Offer `brain.env`'s `DEFAULT_BACKEND` (one key, never sourced;
 `claude` when absent) as the default answer, but the backend is never inferred — the user
-names it, the same way `--backend` is always spelled out on a launch command. Model stays empty unless they name
-one, because a plan-level model overrides every stage of every brief.
+names it, the same way `--backend` is always spelled out on a launch command. Model stays
+empty unless they name one, because a plan-level model overrides every stage of every
+brief. If the preliminary probe says eligible, include in this same question a proposed
+risk category and a one-line reason drawn from the planned briefs; use `uncertain` when
+unsure, and let the user confirm or change both. Categories are `ordinary`,
+`breaking-api`, `destructive-migration`, `auth-permissions-secrets`,
+`deployment-infrastructure`, `merge-policy`, and `uncertain`; anything except
+`ordinary` remains manual unless the owner overrides it outside this skill. Do not ask
+a second question. A reply that answers the cut/backend but omits explicit risk
+confirmation, or silence, is not confirmation: record no assessment and treat the plan
+as human-merge. Never record an assessment during unattended execution. If the repo is manual, its origin is not
+GitHub, or `handoff-policy` is missing, skip the risk question and say the plan waits
+for a human merge; if the tool is missing, also say to update the kit with
+`./setup.sh --update`.
 
 ## 4. Write the plan file
 
@@ -175,6 +193,15 @@ measures anything.
    preliminary check in §3 is only for proposing the question and never decides the
    final base. Any assessment and effective-policy check also use this final checkout,
    not the original repo when a worktree was selected or created.
+6. Record an assessment only when the final checkout is eligible and the user explicitly
+   confirmed or changed the proposed category and reason in §3. Never infer confirmation
+   from an answer about only the cut/backend, silence, or an unattended run. Run
+   `handoff-policy assess --repo <final-checkout> --task <absolute-plan-path> --revision <revision> --risk <confirmed-category> --reason <confirmed-reason>`.
+   The task is the plan's absolute path (`readlink -f`). Do not assess against the
+   original checkout after relocation. If the final checkout is not eligible, record
+   nothing; explain that a human must merge and that this checkout can opt in with
+   `handoff-policy policy-init --repo <final-checkout> --choice true`. Never copy or
+   initialize policy implicitly.
 
 ## 5. Write the briefs of the current phase
 
@@ -215,7 +242,23 @@ check did not run: fix the setup it names, and never treat it as a pass. Exit 1 
 A later brief's `WARN` lines about files and branches an earlier brief of the phase
 creates are expected: check each against that brief's §4 instead.
 
-## 6. Hand over
+## 6. Disclose merge policy, then hand over
+
+After §4b has fixed the final checkout and the plan's revision/base, but before printing
+the launch command, disclose the effective policy. Only when `handoff-policy` is on PATH
+and `revision:` is non-empty, run
+`handoff-policy effective --repo <final-checkout> --task <absolute-plan-path> --revision <revision>`.
+Show its output. If it prints exactly `auto` and the final base is `dev` on GitHub, add:
+"On a final review PASS and green CI the kit squash-merges the feature into `dev`; `dev`
+→ `main` stays manual." In every other case, add: "A human merges the PR." If the tool
+is missing, the revision is empty, or the command fails or prints nothing, add the
+human-merge line and the reason; never claim auto. If a sibling checkout is not
+eligible, record nothing, explain that it needs a human merge, and say its owner can
+opt that checkout in with
+`handoff-policy policy-init --repo <final-checkout> --choice true`; never copy or
+initialize policy implicitly.
+
+## 7. Hand over
 
 Set `orchestration: planned`, `phase:` to the phase just written, and print:
 
@@ -234,7 +277,7 @@ and its briefs.
 
 Last, apply the rules filed under `### /handoff-plan` in `AGENTS.local.md` § Local rules, if there are any.
 
-## 7. Next phase (`orchestration: phase-done`)
+## 8. Next phase (`orchestration: phase-done`)
 
 The previous phase's run produced the facts the cut was waiting for. Read, in this order
 and nothing more:
