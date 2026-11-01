@@ -37,8 +37,8 @@ debrief note whose name happens to carry `-plan-`; only a real plan has an
 
 No match means the sub has no plan:
 
-- none, or all `done` → **new plan**, §2–§6.
-- one with `orchestration: phase-done` → **next phase**, §7, then §4–§6 for that phase.
+- none, or all `done` → **new plan**, §2–§7.
+- one with `orchestration: phase-done` → **next phase**, §8, then §4–§7 for that phase.
 - one with `broken` → not this skill. The status file names the break; the human fixes
   it and runs `/handoff-orchestrate resume`. Say so.
 
