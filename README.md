@@ -98,9 +98,10 @@ Only a first run uses defaults for omitted answers: your git name, `software eng
 `TDD, SOLID, YAGNI, KISS, DRY` and `~/projects`.
 `--backends claude,hermes,devin` picks the agent backends, `--kit <dir>` uses a kit checkout
 instead of the revision pinned in `handoff-kit.pin`, and `--remote <name>|none` creates a private
-GitHub repository for the brain. The default kit revision is an immutable merged commit,
-including the Hermes notes-stage and completion-report compatibility repairs; despite its
-historical name, `HANDOFF_KIT_TAG` can hold a full commit SHA. Setup and CI use the same pin.
+GitHub repository for the brain. The default kit revision is a kit release tag (`v1.1.0`),
+which includes the Hermes notes-stage and completion-report compatibility repairs and the
+repository merge-policy interface; `HANDOFF_KIT_TAG` also accepts a full commit SHA. Setup
+and CI use the same pin.
 
 Three extras are asked, or set by flag: `--linger y|n` keeps your user services running with no
 login session, `--telegram y|n` sets up Telegram notifications, and `--journal y|n` installs the
