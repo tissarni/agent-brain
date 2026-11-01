@@ -139,7 +139,7 @@ an intermediate `phase-done` keeps it for the next phase's `start`.
 
 ## 5. Print the command — and stop
 
-One `bash`-tagged block, the same shape `/handoff-plan` §6 prints, spelling out backend
+One `bash`-tagged block, the same shape `/handoff-plan` §7 prints, spelling out backend
 (always) and model (only if the plan overrides it — a plan-level model overrides every
 stage, so naming it here matters more than usual, per the launch-commands convention):
 

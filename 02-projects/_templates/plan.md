@@ -2,6 +2,7 @@
 updated: YYYY-MM-DD
 tags: [spec, plan]
 project: <sub>
+revision: ''                      # stamped YYYY-MM-DD-r1; incremented on every re-plan
 orchestration: planned          # planned -> running -> paused -> broken -> phase-done -> done
 backend: <claude|hermes|devin>  # forwarded to every stage as --backend; never auto-detected
 model: ''                       # '' = each stage's own default (brief block / hermes profile /

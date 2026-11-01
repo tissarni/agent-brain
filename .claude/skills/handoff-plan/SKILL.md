@@ -37,8 +37,8 @@ debrief note whose name happens to carry `-plan-`; only a real plan has an
 
 No match means the sub has no plan:
 
-- none, or all `done` → **new plan**, §2–§6.
-- one with `orchestration: phase-done` → **next phase**, §7, then §4–§6 for that phase.
+- none, or all `done` → **new plan**, §2–§7.
+- one with `orchestration: phase-done` → **next phase**, §8, then §4–§7 for that phase.
 - one with `broken` → not this skill. The status file names the break; the human fixes
   it and runs `/handoff-orchestrate resume`. Say so.
 
@@ -93,11 +93,30 @@ Rules of thumb that decide most cases:
 - Two or three briefs per phase is normal. Six is a plan that should be looked at again.
   One is fine when the second genuinely depends on it.
 
+Before asking, do a preliminary eligibility probe on the sub's original `repo:` only:
+`handoff-policy` must be on PATH, `git -C <repo> remote get-url origin` must name the
+host `github.com` exactly (`https://github.com/<owner>/<repo>` or `git@github.com:<owner>/<repo>`), and `handoff-policy policy-get --repo <repo>` must print exactly `auto`.
+Do not use this result to choose the plan base, record an assessment, or make any other
+decision; §4b recomputes eligibility on the final checkout.
+
 Show the user the list with the cut marked and one line of why. Ask **once**: is the cut
 right, and which backend. Offer `brain.env`'s `DEFAULT_BACKEND` (one key, never sourced;
 `claude` when absent) as the default answer, but the backend is never inferred — the user
-names it, the same way `--backend` is always spelled out on a launch command. Model stays empty unless they name
-one, because a plan-level model overrides every stage of every brief.
+names it, the same way `--backend` is always spelled out on a launch command. Model stays
+empty unless they name one, because a plan-level model overrides every stage of every
+brief. If the preliminary probe says eligible, include in this same question a proposed
+risk category and a one-line reason drawn from the planned briefs; use `uncertain` when
+unsure, and let the user confirm or change both. Categories are `ordinary`,
+`breaking-api`, `destructive-migration`, `auth-permissions-secrets`,
+`deployment-infrastructure`, `merge-policy`, and `uncertain`; anything except
+`ordinary` remains manual unless the owner overrides it outside this skill. Do not ask
+a second question. A reply that answers the cut/backend but omits explicit risk
+confirmation, or silence, is not confirmation: record no assessment and treat the plan
+as human-merge. Never record an assessment during unattended execution.
+If the repo is manual, its origin is not
+GitHub, or `handoff-policy` is missing, skip the risk question and say the plan waits
+for a human merge; if the tool is missing, also say to update the kit with
+`./setup.sh --update`.
 
 ## 4. Write the plan file
 
@@ -105,12 +124,16 @@ Path: `02-projects/<main>/subprojects/<sub>/specs/YYYY-MM-DD-plan-<slug>.md`, fr
 `02-projects/_templates/plan.md`. Fill every field; stamp resolved values, never a
 reference to the defaults file:
 
+- `revision:` for a new plan, stamp `YYYY-MM-DD-r1` using today's date. When rewriting
+  an existing plan's phases or briefs, increment its revision suffix (`-r<N+1>`) and
+  ask for the risk category again in §3; every revision needs its own confirmation.
 - `backend:` what the user said. `model:` `''` unless they named one.
 - `branch:` the sub's `branch:`. A phase that must work elsewhere gets a `branch:` under
   its own `phases[]` entry, with the reason on the line.
-- `base:` `''` unless the PR must land somewhere other than `dev` (or `main` on a repo
-  with no `dev`). The run pushes every commit and opens one draft PR to the base; the
-  driver backstops both after each brief.
+- `base:` finalize after §4b. Use `dev` only when the final checkout is eligible under
+  §4b; otherwise keep `''` (the kit's default: `dev` when origin has it, else `main`).
+  The run pushes every commit and opens one draft PR to the base; the driver backstops
+  both after each brief.
 - `setup:` `''` unless the repo needs an install in a fresh checkout: one command, e.g.
   `(cd frontend && npm ci)`. §4b runs it, once, only when it makes a worktree.
 - `budgets:` from `02-projects/_templates/handoff-defaults.yml` `orchestration.budgets`,
@@ -151,7 +174,10 @@ measures anything.
    dropped from the sub. So `~/projects/WebApp` with `webapp-login-timeout` gives
    `~/projects/WebApp-login-timeout`.
    - Run
-     `git -C <repo> fetch -q origin && git -C <repo> worktree add --detach <sibling> origin/<base>`.
+     `git -C <repo> fetch -q origin && git -C <repo> worktree add --detach <sibling> origin/<seed-ref>`.
+     Use `origin/dev` as `<seed-ref>` only when it exists; otherwise use `origin/main`.
+     This is only the worktree's starting point, not the plan's PR target. Never create
+     `dev` or copy policy during planning; the orchestrator handles a missing `dev`.
      Reuse an existing sibling only when no plan left in step 1 points at it, and skip the
      `worktree add` for it. When the sibling exists and a plan left in step 1 points at it,
      stop and ask the operator for another name.
@@ -161,6 +187,23 @@ measures anything.
    - Set the sub's `repo:` to the sibling. `/handoff` reads that field, so §5 measures
      each brief's §2 in the tree it will run in.
 4. Say which case applied in the plan's Log line.
+5. Now determine eligibility authoritatively on the final checkout: `handoff-policy`
+   must be on PATH, its `origin` URL must name the host `github.com` exactly (as in §3), and
+   `handoff-policy policy-get --repo <final-checkout>` must print exactly `auto`.
+   Use `base: dev` only when all three checks pass; otherwise use `base: ''`. Rewrite the
+   plan file's `base:` now with that value, since §4 wrote it before the checkout was known. The
+   preliminary check in §3 is only for proposing the question and never decides the
+   final base. Any assessment and effective-policy check also use this final checkout,
+   not the original repo when a worktree was selected or created.
+6. Record an assessment only when the final checkout is eligible and the user explicitly
+   confirmed or changed the proposed category and reason in §3. Never infer confirmation
+   from an answer about only the cut/backend, silence, or an unattended run. Run
+   `handoff-policy assess --repo <final-checkout> --task <absolute-plan-path> --revision <revision> --risk <confirmed-category> --reason <confirmed-reason>`.
+   The task is the plan's absolute path (`readlink -f`). Do not assess against the
+   original checkout after relocation. If the final checkout is not eligible, record
+   nothing; explain that a human must merge and that this checkout can opt in with
+   `handoff-policy policy-init --repo <final-checkout> --choice true`. Never copy or
+   initialize policy implicitly.
 
 ## 5. Write the briefs of the current phase
 
@@ -201,7 +244,23 @@ check did not run: fix the setup it names, and never treat it as a pass. Exit 1 
 A later brief's `WARN` lines about files and branches an earlier brief of the phase
 creates are expected: check each against that brief's §4 instead.
 
-## 6. Hand over
+## 6. Disclose merge policy, then hand over
+
+After §4b has fixed the final checkout and the plan's revision/base, but before printing
+the launch command, disclose the effective policy. Only when `handoff-policy` is on PATH
+and `revision:` is non-empty, run
+`handoff-policy effective --repo <final-checkout> --task <absolute-plan-path> --revision <revision>`.
+Show its output. If it prints exactly `auto` and the final base is `dev` on GitHub, add:
+"On a final review PASS and green CI the kit squash-merges the feature into `dev`; `dev`
+→ `main` stays manual." In every other case, add: "A human merges the PR." If the tool
+is missing, the revision is empty, or the command fails or prints nothing, add the
+human-merge line and the reason; never claim auto. If a sibling checkout is not
+eligible, record nothing, explain that it needs a human merge, and say its owner can
+opt that checkout in with
+`handoff-policy policy-init --repo <final-checkout> --choice true`; never copy or
+initialize policy implicitly.
+
+## 7. Hand over
 
 Set `orchestration: planned`, `phase:` to the phase just written, and print:
 
@@ -220,7 +279,7 @@ and its briefs.
 
 Last, apply the rules filed under `### /handoff-plan` in `AGENTS.local.md` § Local rules, if there are any.
 
-## 7. Next phase (`orchestration: phase-done`)
+## 8. Next phase (`orchestration: phase-done`)
 
 The previous phase's run produced the facts the cut was waiting for. Read, in this order
 and nothing more:
@@ -238,5 +297,7 @@ and nothing more:
 Then §3 again for the remaining phases (the cut may move now that the facts are in).
 Then §4 to update the plan — `phase:` bumped, the finished phase `status: done`, the new
 phase's `briefs:` filled, `orchestration: planned`, a dated Log line naming what the
-summary changed, §4b for the checkout, and §5–§6 for the new briefs. The old phase's briefs stay `closed` and
-are never edited.
+summary changed, §4b for the checkout, and §5–§7 for the new briefs, the merge disclosure and
+the hand-over. Adding a phase rewrites the plan's briefs, so it bumps `revision:` (`-r<N+1>`)
+and the risk is confirmed again in §3 before §4b records it. The old phase's briefs stay
+`closed` and are never edited.
