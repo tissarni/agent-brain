@@ -98,7 +98,7 @@ Only a first run uses defaults for omitted answers: your git name, `software eng
 `TDD, SOLID, YAGNI, KISS, DRY` and `~/projects`.
 `--backends claude,hermes,devin` picks the agent backends, `--kit <dir>` uses a kit checkout
 instead of the revision pinned in `handoff-kit.pin`, and `--remote <name>|none` creates a private
-GitHub repository for the brain. The default kit revision is a kit release tag (`v1.1.2`),
+GitHub repository for the brain. The default kit revision is a kit release tag (`v1.1.3`),
 which includes the Hermes notes-stage and completion-report compatibility repairs and the
 repository merge-policy interface; `HANDOFF_KIT_TAG` also accepts a full commit SHA. Setup
 and CI use the same pin.
